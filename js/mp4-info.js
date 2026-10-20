@@ -1,5 +1,5 @@
 // MP4ファイルのヘッダから映像のfpsとフレーム数を読む
-// 読む場所：映像トラック（hdlr が "vide"）の mdhd（時間の単位と長さ）と stts（フレーム数）
+// 読む場所：映像トラック（hdlr が "vide"）の mdhd（時間の単位と長さ）、stts（フレーム数）、stsd（圧縮形式）
 // 読めない形式の場合は null を返す（その場合はfpsを手入力する）
 
 function typeAt(view, pos) {
@@ -43,13 +43,16 @@ export function readVideoInfo(view) {
       const timescale = view.getUint32(mdhd.start + (v1 ? 20 : 12));
       const units = v1 ? Number(view.getBigUint64(mdhd.start + 24)) : view.getUint32(mdhd.start + 16);
 
-      const stts = child(view, child(view, child(view, mdia, "minf"), "stbl"), "stts");
+      const stbl = child(view, child(view, mdia, "minf"), "stbl");
+      const stts = child(view, stbl, "stts");
+      const stsd = child(view, stbl, "stsd");
+      const codec = stsd ? typeAt(view, stsd.start + 12) : null; // 例："hvc1"（HEVC）、"avc1"（H.264）
       const entries = view.getUint32(stts.start + 4);
       let frames = 0;
       for (let i = 0; i < entries; i++) frames += view.getUint32(stts.start + 8 + i * 8);
 
       const duration = units / timescale;
-      return { fps: Math.round((frames / duration) * 1000) / 1000, frames, duration };
+      return { fps: Math.round((frames / duration) * 1000) / 1000, frames, duration, codec };
     }
   } catch {
     // 形式が想定と違う場合は読めなかった扱い

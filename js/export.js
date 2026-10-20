@@ -35,7 +35,7 @@ export function buildCSV(frames, fps, strokes) {
 }
 
 // 解析条件と全データを含むJSON
-export function buildJSON(meta, frames, strokes) {
+export function buildJSON(meta, frames, strokes, world = null) {
   return {
     format: "oc-form-analysis",
     version: 1,
@@ -47,8 +47,10 @@ export function buildJSON(meta, frames, strokes) {
       source: "est＝MediaPipeによる推定値、manual＝手動修正",
       angles: "2D画像平面上の角度。カメラの向きにより真の関節角度とは異なる",
       strokes: "区切り＝手が最も高い時点（自動検出）。side＝その区切りから次の区切りまでの漕ぐ側",
+      world: "MediaPipeの3D推定座標（腰の中心が原点、単位およそm、x右・y下・z奥）。1台のカメラからの推定値で、奥行きの精度は低い",
     },
     strokes,
     frames,
+    world,
   };
 }

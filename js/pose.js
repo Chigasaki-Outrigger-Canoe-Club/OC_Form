@@ -39,23 +39,30 @@ function seekTo(video, time) {
 
 const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
 
-// 動画の全フレームを解析。戻り値：フレームごとの関節点の配列（人が見つからないフレームは null）
+// 動画の全フレームを解析。戻り値：{ frames, world }（人が見つからないフレームは null）
+//   frames：画像上のピクセル座標、world：MediaPipe の3D推定座標（腰の中心が原点、およそメートル）
 export async function analyzeVideo(video, fps, onProgress, isStopped) {
   const model = await load();
   const total = frameCount(video.duration, fps);
   const w = video.videoWidth;
   const h = video.videoHeight;
   const frames = [];
+  const world = [];
   video.pause();
 
   for (let f = 0; f < total && !isStopped(); f++) {
     await seekTo(video, frameToTime(f, fps));
     clock += 1000 / fps;
-    const person = model.detectForVideo(video, clock).landmarks[0];
+    const result = model.detectForVideo(video, clock);
+    const person = result.landmarks[0];
+    const person3d = result.worldLandmarks[0];
     frames.push(person
       ? person.map((p) => ({ x: round(p.x * w, 1), y: round(p.y * h, 1), v: round(p.visibility, 3), src: "est" }))
       : null);
+    world.push(person3d
+      ? person3d.map((p) => ({ x: round(p.x, 4), y: round(p.y, 4), z: round(p.z, 4), v: round(p.visibility, 3) }))
+      : null);
     onProgress(f + 1, total);
   }
-  return frames;
+  return { frames, world };
 }

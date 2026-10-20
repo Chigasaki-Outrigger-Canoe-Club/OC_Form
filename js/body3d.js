@@ -1,0 +1,114 @@
+// 3D表示用の計算（表示処理から分離）
+//
+// 入力：MediaPipe の worldLandmarks（腰の中心が原点、単位はおよそメートル）
+//   MediaPipe の向き：x＝画像の右、y＝下、z＝カメラから遠ざかる向き
+// 出力：選手の体を基準にした座標（単位m）
+//   X＝選手の左、Y＝上、Z＝選手の前、床＝Y=0
+// 注意：1台のカメラからの推定値。奥行き（カメラ方向）の精度は低い。
+
+import { P } from "./angles.js";
+
+const HEEL_L = 29, HEEL_R = 30, TOE_L = 31, TOE_R = 32;
+
+const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+const scale = (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s });
+const length = (a) => Math.hypot(a.x, a.y, a.z);
+const normalize = (a) => scale(a, 1 / (length(a) || 1));
+const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+
+function median(values) {
+  const v = values.filter((n) => n != null).sort((a, b) => a - b);
+  return v.length ? v[Math.floor(v.length / 2)] : 0;
+}
+
+// MediaPipe の向き → X右・Y上・Z手前
+const flip = (p) => ({ x: p.x, y: -p.y, z: -p.z, v: p.v });
+
+// Y軸まわりの回転
+function rotateY(p, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c, v: p.v };
+}
+
+// 動画全体を選手基準の座標に変換する
+// 向き：全フレームの「右の腰・肩 → 左の腰・肩」方向の中央値を X に合わせる（動画ごとに1つの回転）
+//   フレームごとに回さないので、体幹の回旋はそのまま残る
+// 床：足首・かかと・つま先の最も低い点の中央値を Y=0 とする
+export function toBodyFrame(worldFrames) {
+  const flipped = worldFrames.map((f) => (f ? f.map(flip) : null));
+
+  const leftX = [];
+  const leftZ = [];
+  for (const f of flipped) {
+    if (!f) continue;
+    const left = add(sub(f[P.lHip], f[P.rHip]), sub(f[P.lShoulder], f[P.rShoulder]));
+    leftX.push(left.x);
+    leftZ.push(left.z);
+  }
+  const angle = Math.atan2(median(leftZ), median(leftX));
+
+  const rotated = flipped.map((f) => (f ? f.map((p) => rotateY(p, angle)) : null));
+  const floor = median(rotated.map((f) => (f
+    ? Math.min(...[P.lAnkle, P.rAnkle, HEEL_L, HEEL_R, TOE_L, TOE_R].map((i) => f[i].y))
+    : null)));
+
+  return rotated.map((f) => (f ? f.map((p) => ({ ...p, y: p.y - floor })) : null));
+}
+
+// 簡易パドルの推定（推定値）
+// 仮定：上の手がTグリップ（パドルの上端）を持ち、シャフトは上の手から下の手の方向へ伸びる
+// size：{ length, bladeLength, bladeWidth }（m）
+// 戻り値：{ grip, bladeStart, tip, widthDir, bladeWidth, side } または null（手が見えない・両手が近すぎる）
+export function estimatePaddle(body, size) {
+  if (!body) return null;
+  const l = body[P.lWrist];
+  const r = body[P.rWrist];
+  if (l.v < 0.5 || r.v < 0.5) return null;
+
+  const top = l.y >= r.y ? l : r;
+  const bottom = top === l ? r : l;
+  if (length(sub(bottom, top)) < 0.05) return null;
+
+  const dir = normalize(sub(bottom, top));
+  // ブレード面の幅方向：シャフトと前後方向（Z）の両方に直角＝ブレード面は前を向く
+  let widthDir = cross(dir, { x: 0, y: 0, z: 1 });
+  if (length(widthDir) < 0.1) widthDir = { x: 1, y: 0, z: 0 };
+
+  return {
+    grip: { x: top.x, y: top.y, z: top.z },
+    bladeStart: add(top, scale(dir, size.length - size.bladeLength)),
+    tip: add(top, scale(dir, size.length)),
+    widthDir: normalize(widthDir),
+    bladeWidth: size.bladeWidth,
+    side: bottom === l ? "left" : "right",
+    src: "est",
+  };
+}
+
+// ---- 表示用のカメラ計算 ----
+// view：{ yaw, pitch, distance, target }（角度はラジアン）
+// yaw=0 で選手の正面（+Z側）から見る
+export function cameraBasis(view) {
+  const cp = Math.cos(view.pitch);
+  const position = add(view.target, scale({
+    x: cp * Math.sin(view.yaw), y: Math.sin(view.pitch), z: cp * Math.cos(view.yaw),
+  }, view.distance));
+  const forward = normalize(sub(view.target, position));
+  const right = normalize(cross(forward, { x: 0, y: 1, z: 0 }));
+  const up = cross(right, forward);
+  return { position, forward, right, up };
+}
+
+// 3D点 → 画面座標（focal＝焦点距離のピクセル数）。カメラの後ろの点は null
+export function project(p, cam, width, height, focal) {
+  const v = sub(p, cam.position);
+  const depth = v.x * cam.forward.x + v.y * cam.forward.y + v.z * cam.forward.z;
+  if (depth <= 0.01) return null;
+  const x = v.x * cam.right.x + v.y * cam.right.y + v.z * cam.right.z;
+  const y = v.x * cam.up.x + v.y * cam.up.y + v.z * cam.up.z;
+  return { x: width / 2 + (focal * x) / depth, y: height / 2 - (focal * y) / depth, depth };
+}
+
+export { add, scale };

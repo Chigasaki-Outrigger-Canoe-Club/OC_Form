@@ -2,11 +2,14 @@
 import { timeToFrame, frameToTime, frameCount, clampFrame, formatTime } from "./frame-math.js";
 import { readVideoInfo } from "./mp4-info.js";
 import { analyzeVideo, MODEL_NAME } from "./pose.js";
-import { ANGLES, TRUNK_LABEL, computeAngles } from "./angles.js";
+import { ANGLES, TRUNK_LABEL, computeAngles, P } from "./angles.js";
 import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint } from "./overlay.js";
 import { drawChart, chartFrameAt } from "./chart.js";
 import { buildCSV, buildJSON } from "./export.js";
+import { toBodyFrame, estimatePaddle } from "./body3d.js";
+import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
+import { COLOR } from "./overlay.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -18,7 +21,8 @@ const fpsInput = el("fps");
 const VIEW_LABELS = { front: "前", left: "左", right: "右", back: "後ろ" };
 const ANGLE_LABELS = { ...Object.fromEntries(Object.entries(ANGLES).map(([k, a]) => [k, a.label])), trunk: TRUNK_LABEL };
 
-// 方向ごとのデータ { left: { url, name, fps, fpsSource, pose, strokes }, ... }
+// 方向ごとのデータ { left: { url, name, fps, fpsSource, pose, world, body, strokes }, ... }
+// pose＝2D画像座標、world＝MediaPipeの3D推定、body＝worldを選手基準に変換した座標
 const views = {};
 let currentView = "front";
 let stopRequested = false;
@@ -52,7 +56,7 @@ function selectView(view) {
   }
   el("fileName").textContent = d ? d.name : "未選択";
   el("fpsSource").textContent = d ? d.fpsSource : "";
-  el("emptyNote").hidden = Boolean(d);
+  showStatus(d ? "読み込み中…" : "「動画を選択」から、この方向の動画を読み込んでください");
   renderStrokes();
   updateDisplay();
 }
@@ -71,7 +75,10 @@ el("fileInput").addEventListener("change", async (event) => {
     name: file.name,
     fps: info ? info.fps : fps(),
     fpsSource: info ? "（動画から取得）" : "（読み取れないため手入力してください）",
+    codec: info?.codec ?? null,
     pose: null,
+    world: null,
+    body: null,
     strokes: [],
   };
   el("progress").textContent = "未解析";
@@ -85,8 +92,27 @@ video.addEventListener("loadedmetadata", () => {
   updateDisplay();
 });
 
+// ---- 動画の状態表示（黒い画面のときに理由を出す） ----
+const HEVC = ["hvc1", "hev1"];
+const CANNOT_PLAY = "この動画はこのブラウザで表示できません。";
+const HEVC_HELP = "スマホの動画はHEVC（H.265）形式です。Chrome・Edgeで表示できない場合は、パソコンにHEVC対応がない可能性があります。カメラ設定をH.264（互換性優先）にして撮影するか、H.264に変換してください。";
+
+function showStatus(text) {
+  el("videoStatus").textContent = text;
+  el("videoStatus").hidden = !text;
+}
+
+function playbackProblem() {
+  const isHevc = HEVC.includes(data()?.codec);
+  return CANNOT_PLAY + (isHevc ? HEVC_HELP : "MP4（H.264）形式の動画を使ってください。");
+}
+
+video.addEventListener("loadeddata", () => {
+  showStatus(video.videoWidth ? "" : playbackProblem());
+});
+
 video.addEventListener("error", () => {
-  if (data()) el("fileName").textContent = `${data().name}：このブラウザでは再生できない形式です`;
+  if (data()) showStatus(playbackProblem());
 });
 
 fpsInput.addEventListener("change", () => {
@@ -135,12 +161,15 @@ function tick() {
 
 // ================= 選手情報（ブラウザ内に保存） =================
 const ATHLETE_KEY = "oc-form-athlete";
-const athleteInputs = ["height", "weight", "paddle"];
+const athleteInputs = ["height", "weight", "paddle", "bladeLength", "bladeWidth"];
+// 未入力時の標準値（パドル全長 inch、ブレード cm）
+const DEFAULTS = { paddle: 50, bladeLength: 48, bladeWidth: 25 };
 
 function loadAthlete() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(ATHLETE_KEY)) || {}; } catch { /* 保存なし */ }
   athleteInputs.forEach((id) => (el(id).value = saved[id] ?? ""));
+  Object.entries(DEFAULTS).forEach(([id, v]) => (el(id).placeholder = `標準 ${v}`));
   showPaddleCm();
 }
 
@@ -150,6 +179,19 @@ function athlete() {
     weightKg: Number(el("weight").value) || null,
     paddleInch: Number(el("paddle").value) || null,
     paddleCm: Number(el("paddle").value) ? Math.round(Number(el("paddle").value) * 2.54 * 10) / 10 : null,
+    bladeLengthCm: Number(el("bladeLength").value) || null,
+    bladeWidthCm: Number(el("bladeWidth").value) || null,
+  };
+}
+
+// 3D表示用のパドル寸法（m）。未入力は標準値
+function paddleSize() {
+  const value = (id) => Number(el(id).value) || DEFAULTS[id];
+  return {
+    length: (value("paddle") * 2.54) / 100,
+    bladeLength: value("bladeLength") / 100,
+    bladeWidth: value("bladeWidth") / 100,
+    usedDefaults: Object.keys(DEFAULTS).filter((id) => !Number(el(id).value)),
   };
 }
 
@@ -162,19 +204,21 @@ athleteInputs.forEach((id) => el(id).addEventListener("change", () => {
   const values = Object.fromEntries(athleteInputs.map((k) => [k, el(k).value]));
   try { localStorage.setItem(ATHLETE_KEY, JSON.stringify(values)); } catch { /* 保存できない環境 */ }
   showPaddleCm();
+  updateDisplay();
 }));
 
 // ================= 骨格推定 =================
 el("analyze").addEventListener("click", async () => {
   if (!loaded() || analyzing) return;
   const d = data();
+  if (!video.videoWidth) return showStatus(playbackProblem());
   analyzing = true;
   stopRequested = false;
   setAnalyzing(true);
   el("progress").textContent = "ライブラリとモデルを読み込み中…";
   const started = performance.now();
   try {
-    const frames = await analyzeVideo(video, fps(), (done, total) => {
+    const { frames, world } = await analyzeVideo(video, fps(), (done, total) => {
       el("progress").textContent = `解析中… ${done} / ${total} フレーム`;
     }, () => stopRequested);
     const found = frames.filter(Boolean).length;
@@ -183,6 +227,8 @@ el("analyze").addEventListener("click", async () => {
       el("progress").textContent = "中止しました（結果は保存していません）";
     } else {
       d.pose = frames;
+      d.world = world;
+      d.body = toBodyFrame(world);
       d.strokes = detectStrokes(frames, fps());
       el("progress").textContent = `完了：${frames.length} フレーム中 ${found} フレームで人を検出（${seconds} 秒）`;
     }
@@ -317,8 +363,9 @@ el("exportJSON").addEventListener("click", () => {
     video: { name: d.name, fps: fps(), fpsSource: d.fpsSource, width: video.videoWidth, height: video.videoHeight, duration: video.duration },
     model: MODEL_NAME,
     athlete: athlete(),
+    paddleSizeUsed: paddleSize(),
   };
-  download(`${baseName()}_pose.json`, JSON.stringify(buildJSON(meta, d.pose, d.strokes)), "application/json");
+  download(`${baseName()}_pose.json`, JSON.stringify(buildJSON(meta, d.pose, d.strokes, d.world)), "application/json");
 });
 
 el("importJSON").addEventListener("change", async (event) => {
@@ -332,16 +379,44 @@ el("importJSON").addEventListener("change", async (event) => {
     if (json.format !== "oc-form-analysis") throw new Error("このシステムのJSONではありません");
     if (json.video.name !== d.name && !confirm(`動画名が違います（${json.video.name}）。読み込みますか？`)) return;
     d.pose = json.frames;
+    d.world = json.world ?? null;
+    d.body = d.world ? toBodyFrame(d.world) : null;
     d.strokes = json.strokes;
     d.fps = json.video.fps;
     fpsInput.value = d.fps;
-    el("progress").textContent = `JSONから読み込みました（${json.frames.length} フレーム）`;
+    el("progress").textContent = `JSONから読み込みました（${json.frames.length} フレーム${d.world ? "" : "、3Dデータなし"}）`;
     renderStrokes();
     updateDisplay();
   } catch (err) {
     alert(`読み込めませんでした：${err.message}`);
   }
 });
+
+// ================= 3Dビュー =================
+setupView3d(el("view3d"));
+document.querySelectorAll("[data-view3d]").forEach((b) => {
+  b.addEventListener("click", () => setFixedView(b.dataset.view3d));
+});
+el("showTrails").addEventListener("change", updateDisplay);
+
+// 3Dビューに渡す内容（現在フレームの骨格・パドル、現在のストロークの軌跡）
+function update3d(d, frame) {
+  const body = d?.body?.[frame] ?? null;
+  const size = paddleSize();
+  const paddle = estimatePaddle(body, size);
+  const trails = [];
+  const n = d ? strokeIndexAt(frame, d.strokes) : -1;
+  if (body && n >= 0 && el("showTrails").checked) {
+    const range = d.body.slice(d.strokes[n].frame, frame + 1);
+    trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null) });
+    trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null) });
+    trails.push({ color: getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim(), points: range.map((b) => estimatePaddle(b, size)?.tip ?? null) });
+  }
+  updateView3d(body, paddle, trails);
+  el("paddleNote").textContent = size.usedDefaults.length
+    ? "パドル寸法の一部は標準値です（選手情報で入力できます）。"
+    : "";
+}
 
 // ================= 表示の更新 =================
 function updateDisplay() {
@@ -358,8 +433,9 @@ function updateDisplay() {
   el("resolution").textContent = ok ? `${video.videoWidth} × ${video.videoHeight}` : "--";
   el("play").textContent = video.paused ? "▶ 再生" : "⏸ 停止";
 
-  // 骨格
+  // 骨格（2D・3D）
   drawSkeleton(overlay, ok && el("showSkeleton").checked ? lm : null);
+  update3d(ok ? d : null, frame);
 
   // 現在フレームの角度
   const angles = computeAngles(lm);

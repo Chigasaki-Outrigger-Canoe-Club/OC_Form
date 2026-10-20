@@ -4,7 +4,7 @@
 import { P, MIN_VISIBILITY } from "./angles.js";
 
 // 骨格線（つなぐ関節の組み合わせ）
-const BONES = [
+export const BONES = [
   [P.lShoulder, P.rShoulder], [P.lHip, P.rHip],
   [P.lShoulder, P.lElbow], [P.lElbow, P.lWrist], [P.rShoulder, P.rElbow], [P.rElbow, P.rWrist],
   [P.lShoulder, P.lHip], [P.rShoulder, P.rHip],
@@ -15,9 +15,9 @@ const BONES = [
 export const JOINTS = Object.values(P);
 
 const LEFT = new Set([P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
-const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b" };
+export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b" };
 
-const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);
+export const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);
 
 export function drawSkeleton(canvas, lm) {
   const ctx = canvas.getContext("2d");

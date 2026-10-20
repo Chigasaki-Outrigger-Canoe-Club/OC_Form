@@ -9,7 +9,7 @@
 <body>
   <header class="header">
     <h1>OC Form 解析</h1>
-    <span class="badge">MVP 1：動画・骨格解析</span>
+    <span class="badge">MVP 1：動画・骨格解析 ＋ 3D表示（仮実装）</span>
   </header>
 
   <main class="layout">
@@ -30,8 +30,9 @@
         <div class="stage" id="stage">
           <video id="video" playsinline muted></video>
           <canvas id="overlay"></canvas>
+          <p id="videoStatus" class="stage-message"></p>
         </div>
-        <p id="emptyNote" class="muted">方向を選んでから動画を選択してください。動画はこのPC内でのみ処理され、外部に送信されません。</p>
+        <p class="muted">動画はこのPC内でのみ処理され、外部に送信されません。</p>
         <input type="range" id="seek" min="0" max="0" value="0">
         <div class="row">
           <button class="btn" id="prev">◀ 1コマ</button>
@@ -45,6 +46,21 @@
           </select>
           <span class="muted">スペース＝再生/停止、← →＝コマ送り</span>
         </div>
+      </section>
+
+      <section class="panel">
+        <h2>3D骨格（推定）</h2>
+        <div class="row">
+          <button class="btn" data-view3d="front">正面</button>
+          <button class="btn" data-view3d="left">左側面</button>
+          <button class="btn" data-view3d="right">右側面</button>
+          <button class="btn" data-view3d="back">後方</button>
+          <button class="btn" data-view3d="top">上</button>
+          <label><input type="checkbox" id="showTrails" checked> 軌跡（現在のストローク）</label>
+        </div>
+        <canvas id="view3d" class="view3d"></canvas>
+        <p class="muted">ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
+        <p class="muted">1台のカメラから推定した3D骨格（MediaPipe）です。奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
       </section>
 
       <section class="panel">
@@ -77,8 +93,10 @@
           <dt>身長</dt><dd><input type="number" id="height" min="100" max="230"> cm</dd>
           <dt>体重</dt><dd><input type="number" id="weight" min="30" max="200"> kg</dd>
           <dt>パドル全長</dt><dd><input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></dd>
+          <dt>ブレード長</dt><dd><input type="number" id="bladeLength" min="20" max="70"> cm</dd>
+          <dt>ブレード幅</dt><dd><input type="number" id="bladeWidth" min="10" max="40"> cm</dd>
         </dl>
-        <p class="muted">このブラウザ内に保存されます。寸法による実寸換算はMVP 2で実装予定です。</p>
+        <p class="muted">このブラウザ内に保存されます。パドル寸法は3D表示に使います。未入力は標準値を使います。</p>
       </section>
 
       <section class="panel">

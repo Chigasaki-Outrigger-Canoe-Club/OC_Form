@@ -6,6 +6,8 @@
 //   トークンはこのブラウザの localStorage にだけ保存する
 // 注意：リポジトリが公開の場合、保存したデータは誰でも見られる
 
+import { buildSessionFile } from "./sessions.js";
+
 export const DEFAULT_SETTINGS = {
   owner: "chigasaki-outrigger-canoe-club",
   repo: "OC_Form",
@@ -21,16 +23,6 @@ const safeName = (text) => (text || "unknown").replace(/[\\/:*?"<>|\s]+/g, "_");
 
 // 保存先のパス：data/選手名/練習日_セッションID.json
 export const sessionPath = (session) => `data/${safeName(session.athleteName)}/${safeName(session.date)}_${session.id}.json`;
-
-// GitHubに保存する中身（セッションの記録に形式名とメモを付ける）
-export function buildUpload(session) {
-  return {
-    format: "oc-form-session",
-    version: 1,
-    notes: "解析結果のみ（動画は含まない）。座標・角度は推定値。各項目の説明はサイトのREADMEを参照",
-    ...session,
-  };
-}
 
 // 文字列（日本語を含む）→ Base64（大きなデータでも止まらないよう分けて変換）
 export function toBase64(text) {
@@ -95,7 +87,7 @@ export async function uploadSession(settings, session, fetchFn) {
     method: "PUT",
     body: JSON.stringify({
       message: `解析結果を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${session.memo ?? ""}`.trim(),
-      content: toBase64(JSON.stringify(buildUpload(session))),
+      content: toBase64(JSON.stringify(buildSessionFile(session))),
       branch: settings.branch,
       ...(existing?.sha ? { sha: existing.sha } : {}),
     }),

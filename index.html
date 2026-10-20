@@ -9,127 +9,29 @@
 <body>
   <header class="header">
     <h1>OC Form 解析</h1>
-    <span class="badge">MVP 1：動画・骨格解析 ＋ 3D表示（仮実装）</span>
+    <span class="badge">MVP 1 ＋ 3D表示（仮実装）</span>
   </header>
 
   <main class="layout">
-    <!-- 左列：動画とグラフ -->
-    <div class="column">
-      <section class="panel">
-        <div class="row">
-          <button class="tab" data-view="front">前</button>
-          <button class="tab" data-view="left">左</button>
-          <button class="tab" data-view="right">右</button>
-          <button class="tab" data-view="back">後ろ</button>
-          <label class="btn">
-            動画を選択
-            <input type="file" id="fileInput" accept="video/*" hidden>
-          </label>
-          <span id="fileName" class="muted">未選択</span>
-        </div>
-        <div class="stage" id="stage">
-          <video id="video" playsinline muted></video>
-          <canvas id="overlay"></canvas>
-          <p id="videoStatus" class="stage-message"></p>
-        </div>
-        <p class="muted">動画はこのPC内でのみ処理され、外部に送信されません。</p>
-        <input type="range" id="seek" min="0" max="0" value="0">
-        <div class="row">
-          <button class="btn" id="prev">◀ 1コマ</button>
-          <button class="btn" id="play">▶ 再生</button>
-          <button class="btn" id="next">1コマ ▶</button>
-          <select id="speed" class="btn">
-            <option value="0.25">0.25倍</option>
-            <option value="0.5">0.5倍</option>
-            <option value="1" selected>1倍</option>
-            <option value="2">2倍</option>
-          </select>
-          <span class="muted">スペース＝再生/停止、← →＝コマ送り</span>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>3D骨格（推定）</h2>
-        <div class="row">
-          <label><input type="radio" name="mode3d" value="fused" checked> 全方向の統合モデル</label>
-          <label><input type="radio" name="mode3d" value="single"> この動画だけ</label>
-          <span class="muted">統合に使う方向：</span>
-          <label><input type="checkbox" id="fuse-front" checked> 前</label>
-          <label><input type="checkbox" id="fuse-left" checked> 左</label>
-          <label><input type="checkbox" id="fuse-right" checked> 右</label>
-          <label><input type="checkbox" id="fuse-back" checked> 後ろ</label>
-        </div>
-        <p id="mode3dInfo" class="muted"></p>
-        <div class="row">
-          <button class="btn" data-view3d="front">正面</button>
-          <button class="btn" data-view3d="left">左側面</button>
-          <button class="btn" data-view3d="right">右側面</button>
-          <button class="btn" data-view3d="back">後方</button>
-          <button class="btn" data-view3d="top">上</button>
-          <label><input type="checkbox" id="showTrails" checked> 軌跡（現在のストローク）</label>
-        </div>
-        <canvas id="view3d" class="view3d"></canvas>
-        <p class="muted">ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
-        <p id="fusionInfo" class="muted"></p>
-        <p class="muted">統合モデル：各動画のストロークを0〜100%にそろえて漕ぐ側ごとに平均し、方向ごとに「カメラから見やすい軸」を重く使って合わせた推定です（3本は同時撮影ではないため、特定の1ストロークの再現ではありません）。表示中の動画の位相に合わせて動きます。おかしい方向があれば、チェックを外して除けます。</p>
-        <p class="muted">「この動画だけ」：1台のカメラから推定した3D骨格（MediaPipe）です。奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
-      </section>
-
-      <section class="panel">
-        <h2>フォームのコメント（改善候補）</h2>
-        <table class="table">
-          <thead><tr><th>項目</th><th>値</th><th>コメント</th></tr></thead>
-          <tbody id="feedbackList"></tbody>
-        </table>
-        <p class="muted">統合3Dモデル（推定）から計算しています。目安は一般的な指導ポイントをもとにした暫定値で、科学的に検証したものではありません。気になる項目は動画で確認してください。今後、本人の基準フォームとの比較に置き換える予定です。</p>
-      </section>
-
-      <section class="panel">
-        <h2>角度の時系列</h2>
-        <div class="row">
-          <select id="angleSelect" class="btn"></select>
-          <span class="muted">グラフをクリックするとその位置へ移動。縦線＝ストロークの区切り</span>
-        </div>
-        <canvas id="chart" class="chart"></canvas>
-        <p class="muted">角度は画像上の2D座標から計算した値です。カメラの向きにより真の関節角度とは異なります。信頼度が低い区間は表示しません。</p>
-      </section>
-    </div>
-
-    <!-- 右列：情報と操作 -->
-    <div class="column">
-      <section class="panel">
-        <h2>まとめて実行</h2>
-        <button class="btn primary" id="runAll">解析 → 3Dモデル → 保存</button>
-        <p id="runAllStatus" class="muted">各方向のタブで動画を読み込み、選手と練習日・メモを決めてから押してください。読み込んだ全方向の動画を解析し、統合3Dモデルとコメントを作り、セッションとして保存します（40秒の動画1本で数分かかります）。</p>
-      </section>
-
-      <section class="panel">
-        <h2>動画の情報</h2>
-        <dl class="info">
-          <dt>時間</dt><dd id="time">--</dd>
-          <dt>フレーム</dt><dd id="frame">--</dd>
-          <dt>長さ</dt><dd id="duration">--</dd>
-          <dt>解像度</dt><dd id="resolution">--</dd>
-          <dt>fps</dt><dd><input type="number" id="fps" value="60" min="1" max="240" step="any"> <span id="fpsSource" class="muted"></span></dd>
-        </dl>
-      </section>
-
-      <section class="panel">
-        <h2>選手情報</h2>
-        <div class="row">
-          <select id="athleteSelect" class="btn"></select>
-          <button class="btn" id="addAthlete">＋追加</button>
-          <button class="btn" id="renameAthlete">名前変更</button>
-          <button class="btn" id="removeAthlete">削除</button>
-        </div>
-        <dl class="info">
-          <dt>身長</dt><dd><input type="number" id="height" min="100" max="230"> cm</dd>
-          <dt>体重</dt><dd><input type="number" id="weight" min="30" max="200"> kg</dd>
-          <dt>パドル全長</dt><dd><input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></dd>
-          <dt>ブレード長</dt><dd><input type="number" id="bladeLength" min="20" max="70"> cm</dd>
-          <dt>ブレード幅</dt><dd><input type="number" id="bladeWidth" min="10" max="40"> cm</dd>
-        </dl>
-        <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内のみ）。パドル寸法は3D表示に使います。未入力は標準値を使います。</p>
+    <!-- 1. 選手情報（動画を読み込む前に選ぶ） -->
+    <section class="panel">
+      <h2>選手</h2>
+      <div class="row">
+        <select id="athleteSelect" class="btn"></select>
+        <button class="btn" id="addAthlete">＋追加</button>
+        <button class="btn" id="renameAthlete">名前変更</button>
+        <button class="btn" id="removeAthlete">削除</button>
+      </div>
+      <div class="fields">
+        <label>身長 <input type="number" id="height" min="100" max="230"> cm</label>
+        <label>体重 <input type="number" id="weight" min="30" max="200"> kg</label>
+        <label>パドル全長 <input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></label>
+        <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
+        <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
+      </div>
+      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
+      <details class="sub">
+        <summary>選手データのバックアップ</summary>
         <div class="row">
           <button class="btn" id="exportAthletes">選手データを書き出す</button>
           <label class="btn">
@@ -137,89 +39,150 @@
             <input type="file" id="importAthletes" accept=".json,application/json" hidden>
           </label>
         </div>
-        <p class="muted">ブラウザのデータを消すと選手データも消えます。書き出したファイルで別のPCにも移せます。<span id="athleteNote"></span></p>
-      </section>
+      </details>
+    </section>
 
-      <section class="panel">
-        <h2>セッション（保存データ） <span id="sessionCount" class="muted"></span></h2>
-        <p class="muted">開いているデータ：<span id="sessionLabel">新規（未保存）</span></p>
-        <dl class="info">
-          <dt>練習日</dt><dd><input type="date" id="sessionDate" class="btn"></dd>
-          <dt>メモ</dt><dd><input type="text" id="sessionMemo" class="btn wide" placeholder="例：40spm、右3本で交代"></dd>
-        </dl>
+    <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->
+    <section class="panel">
+      <h2>動画と3Dモデル</h2>
+      <div class="row">
+        <button class="tab" data-view="front">前</button>
+        <button class="tab" data-view="left">左</button>
+        <button class="tab" data-view="right">右</button>
+        <button class="tab" data-view="back">後ろ</button>
+        <label class="btn">
+          動画を選択
+          <input type="file" id="fileInput" accept="video/*" hidden>
+        </label>
+        <span id="fileName" class="muted">未選択</span>
+        <span id="fpsBox" hidden>fps <input type="number" id="fps" value="60" min="1" max="240" step="any" class="btn small"> <span class="muted">（動画から読み取れないため入力してください）</span></span>
+      </div>
+
+      <div class="row">
+        <input type="text" id="sessionMemo" class="btn wide" placeholder="メモ（例：40spm、右3本で交代）">
+        <button class="btn primary" id="runAll">解析 → 3Dモデル → 保存</button>
+        <button class="btn" id="stop" disabled>中止</button>
+      </div>
+      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから押してください。読み込んだ全方向を解析し、3Dモデルと改善点を作り、保存します（40秒の動画1本で数分かかります）。</p>
+      <details class="sub">
+        <summary>保存の設定</summary>
+        <label><input type="checkbox" id="saveVideo" checked> 動画も保存する（このブラウザ内。1本で約60〜70MB）</label>
+        <p class="muted">GitHubにも自動保存：保存先 <span id="ghRepo"></span>。解析結果（JSON）だけを送り、動画は送りません。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
-          <button class="btn" id="saveSession">保存</button>
-          <label><input type="checkbox" id="saveVideo" checked> 動画も保存</label>
-          <button class="btn" id="newSession">新しいセッション</button>
+          <label><input type="checkbox" id="ghEnabled"> 保存のたびにGitHubへ送る</label>
         </div>
-        <p id="sessionNote" class="muted"></p>
-        <div class="scroll">
-          <table class="table">
-            <thead><tr><th>練習日</th><th>メモ</th><th>内容</th><th></th></tr></thead>
-            <tbody id="sessionList"></tbody>
-          </table>
+        <div class="row">
+          <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
+          <button class="btn" id="ghTest">接続テスト</button>
         </div>
+        <p id="ghNote" class="muted"></p>
+        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。</p>
+      </details>
+
+      <div class="row">
+        <button class="tab active" data-display="video">動画</button>
+        <button class="tab" data-display="model">3Dモデル</button>
+      </div>
+
+      <div id="videoBox" class="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <p id="videoStatus" class="stage-message"></p>
+      </div>
+
+      <div id="modelBox" hidden>
+        <div class="row">
+          <label><input type="radio" name="mode3d" value="fused" checked> 全方向の統合モデル</label>
+          <label><input type="radio" name="mode3d" value="single"> この動画だけ</label>
+          <button class="btn small" data-view3d="front">正面</button>
+          <button class="btn small" data-view3d="left">左側面</button>
+          <button class="btn small" data-view3d="right">右側面</button>
+          <button class="btn small" data-view3d="back">後方</button>
+          <button class="btn small" data-view3d="top">上</button>
+          <label><input type="checkbox" id="showTrails" checked> 軌跡</label>
+        </div>
+        <canvas id="view3d" class="view3d"></canvas>
+        <p id="mode3dInfo" class="muted"></p>
         <details class="sub">
-          <summary>GitHubにも自動保存する</summary>
-          <p class="muted">保存先：<span id="ghRepo"></span>。保存のたびに解析結果（JSON）を送ります。動画は送りません。<strong>このリポジトリは公開なので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
+          <summary>3Dモデルの設定・説明</summary>
           <div class="row">
-            <label><input type="checkbox" id="ghEnabled"> 保存のたびにGitHubへ送る</label>
+            <span class="muted">統合に使う方向：</span>
+            <label><input type="checkbox" id="fuse-front" checked> 前</label>
+            <label><input type="checkbox" id="fuse-left" checked> 左</label>
+            <label><input type="checkbox" id="fuse-right" checked> 右</label>
+            <label><input type="checkbox" id="fuse-back" checked> 後ろ</label>
           </div>
-          <div class="row">
-            <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
-            <button class="btn" id="ghTest">接続テスト</button>
-          </div>
-          <p id="ghNote" class="muted"></p>
-          <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。</p>
+          <p id="fusionInfo" class="muted"></p>
+          <p class="muted">操作：ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
+          <p class="muted">統合モデル：各動画のストロークを0〜100%にそろえて漕ぐ側ごとに平均し、方向ごとに「カメラから見やすい軸」を重く使って合わせた推定です（3本は同時撮影ではないため、特定の1ストロークの再現ではありません）。再生位置の位相に合わせて動きます。おかしい方向があればチェックを外して除けます。</p>
+          <p class="muted">「この動画だけ」：1台のカメラからの推定で、奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
         </details>
-        <p class="muted">選択中の選手のデータを、このPCのブラウザ内に保存します。開いたデータを修正して「保存」すると上書きします。動画1本で約60〜70MB使います。<span id="storageUsage"></span></p>
-      </section>
+      </div>
 
-      <section class="panel">
-        <h2>骨格推定</h2>
-        <div class="row">
-          <button class="btn" id="analyzeAll">全方向を解析</button>
-          <button class="btn" id="analyze">この動画を解析</button>
-          <button class="btn" id="stop" disabled>中止</button>
-          <label><input type="checkbox" id="showSkeleton" checked> 骨格を表示</label>
-        </div>
-        <p id="progress" class="muted">未解析</p>
-        <p class="muted">初回はMediaPipeのライブラリとモデル（約10MB）をダウンロードします。動画は送信しません。停止中に関節をドラッグすると手動修正できます（赤い点＝修正済み）。</p>
-      </section>
+      <input type="range" id="seek" min="0" max="0" value="0">
+      <div class="row">
+        <button class="btn" id="prev">◀ 1コマ</button>
+        <button class="btn" id="play">▶ 再生</button>
+        <button class="btn" id="next">1コマ ▶</button>
+        <select id="speed" class="btn">
+          <option value="0.25">0.25倍</option>
+          <option value="0.5">0.5倍</option>
+          <option value="1" selected>1倍</option>
+          <option value="2">2倍</option>
+        </select>
+        <span class="muted">スペース＝再生/停止、← →＝コマ送り。停止中に関節をドラッグすると修正できます（赤い点＝修正済み）</span>
+      </div>
+    </section>
 
-      <section class="panel">
-        <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
-        <div class="row">
-          <button class="btn" id="detect">自動検出</button>
-          <button class="btn" id="addStroke">現在位置に区切りを追加</button>
-        </div>
-        <p class="muted">区切り＝手が最も高い時点（自動検出の推定値）。漕ぐ側はストロークごとに推定します。パドルチェンジの前後は確認して修正してください。</p>
-        <div class="scroll">
-          <table class="table">
-            <thead><tr><th>No.</th><th>開始</th><th>漕ぐ側</th><th></th></tr></thead>
-            <tbody id="strokeList"></tbody>
-          </table>
-        </div>
-      </section>
+    <!-- 3. フォームの改善点 -->
+    <section class="panel">
+      <h2>フォームの改善点</h2>
+      <table class="table">
+        <thead><tr><th>項目</th><th>値</th><th>コメント</th></tr></thead>
+        <tbody id="feedbackList"></tbody>
+      </table>
+      <p id="feedbackEmpty" class="muted">解析すると表示されます。</p>
+      <p class="muted">統合3Dモデル（推定）から計算しています。目安は一般的な指導ポイントをもとにした暫定値で、科学的に検証したものではありません。気になる項目は動画で確認してください。</p>
+    </section>
 
-      <section class="panel">
-        <h2>現在フレームの角度</h2>
-        <dl class="info" id="currentAngles"></dl>
-      </section>
+    <!-- 4. 過去データ読み出し -->
+    <section class="panel">
+      <h2>過去データ読み出し <span id="sessionCount" class="muted"></span></h2>
+      <p class="muted">表示中：<span id="sessionLabel">新しいデータ（未保存）</span></p>
+      <div class="scroll">
+        <table class="table">
+          <thead><tr><th>練習日</th><th>メモ</th><th></th></tr></thead>
+          <tbody id="sessionList"></tbody>
+        </table>
+      </div>
+      <p class="muted">行を押すとそのデータを表示します。<span id="sessionNote"></span></p>
+      <div class="row">
+        <label class="btn">
+          ファイルから読み込む
+          <input type="file" id="importSession" accept=".json,application/json" hidden>
+        </label>
+        <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
+        <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
+      </div>
+      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。<span id="storageUsage"></span></p>
+    </section>
 
-      <section class="panel">
-        <h2>書き出し・読み込み</h2>
-        <div class="row">
-          <button class="btn" id="exportCSV">CSV</button>
-          <button class="btn" id="exportJSON">JSON</button>
-          <label class="btn">
-            JSONを読み込む
-            <input type="file" id="importJSON" accept=".json,application/json" hidden>
-          </label>
-        </div>
-        <p class="muted">JSONを保存しておくと、次回は解析をやり直さずに読み込めます（同じ動画を選んでから読み込んでください）。</p>
-      </section>
-    </div>
+    <!-- 5. ストローク（まとめて実行で自動検出。必要なときだけ修正） -->
+    <section class="panel">
+      <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
+      <div class="row">
+        <button class="btn" id="detect">自動検出をやり直す</button>
+        <button class="btn" id="addStroke">現在位置に区切りを追加</button>
+        <button class="btn" id="saveSession">修正を保存</button>
+      </div>
+      <p class="muted">表示中の方向のストロークです。区切り＝手が最も高い時点（自動検出の推定値）。パドルチェンジの前後は漕ぐ側を確認して修正してください。</p>
+      <div class="scroll">
+        <table class="table">
+          <thead><tr><th>No.</th><th>開始</th><th>漕ぐ側</th><th></th></tr></thead>
+          <tbody id="strokeList"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script type="module" src="js/main.js"></script>

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sessionPath, buildUpload, toBase64, testConnection, uploadSession, DEFAULT_SETTINGS } from "../js/github.js";
+import { sessionPath, toBase64, testConnection, uploadSession, DEFAULT_SETTINGS } from "../js/github.js";
 
 const settings = { ...DEFAULT_SETTINGS, token: "t" };
 const session = { id: "s1", athleteName: "Manato", date: "2026-10-20", memo: "40spm", views: {} };
@@ -23,9 +23,6 @@ function mockFetch(routes) {
 test("保存先のパスと中身", () => {
   assert.equal(sessionPath(session), "data/Manato/2026-10-20_s1.json");
   assert.equal(sessionPath({ ...session, athleteName: "a/b c" }), "data/a_b_c/2026-10-20_s1.json");
-  const up = buildUpload(session);
-  assert.equal(up.format, "oc-form-session");
-  assert.equal(up.athleteName, "Manato");
 });
 
 test("Base64：日本語を含む文字列を元に戻せる", () => {

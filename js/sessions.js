@@ -33,17 +33,36 @@ export function buildSession({ id, athlete, date, memo, views, now = new Date() 
   };
 }
 
-// 一覧に出す要約（例："左・右・後ろ（解析済み 2）"）
-export function summarize(session, labels) {
-  const entries = Object.entries(session.views);
-  const names = entries.map(([v]) => labels[v]).join("・");
-  const analyzed = entries.filter(([, r]) => r.pose).length;
-  return `${names}（解析済み ${analyzed}）`;
-}
-
 // 新しい順（練習日 → 保存日時）
 export const sortSessions = (list) => [...list].sort((a, b) =>
   (b.date ?? "").localeCompare(a.date ?? "") || b.savedAt.localeCompare(a.savedAt));
+
+// ---------- ファイル（書き出し・読み込み・GitHub保存）の形式 ----------
+
+// 書き出す中身（セッションの記録に形式名と説明を付ける）。動画は含まない
+export function buildSessionFile(session) {
+  return {
+    format: "oc-form-session",
+    version: 1,
+    notes: {
+      contents: "解析結果のみ（動画は含まない）",
+      pose: "画像上のピクセル座標（左上が原点、yは下向き）。v＝MediaPipeの信頼度（0〜1）。src：est＝推定値、manual＝手動修正",
+      world: "MediaPipeの3D推定座標（腰の中心が原点、単位およそm、x右・y下・z奥）。1台のカメラからの推定値",
+      strokes: "区切り＝手が最も高い時点。side＝その区切りから次の区切りまでの漕ぐ側",
+    },
+    ...session,
+  };
+}
+
+// 読み込んだファイル → セッションの記録（形式が違えば例外）
+export function parseSessionFile(text) {
+  const json = JSON.parse(text);
+  if (json.format !== "oc-form-session" || !json.id || typeof json.views !== "object") {
+    throw new Error("このシステムで書き出したデータではありません");
+  }
+  const { format, version, notes, ...session } = json;
+  return session;
+}
 
 // ---------- IndexedDB の読み書き ----------
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { angleAt, computeAngles, trunkLean, P } from "../js/angles.js";
 import { detectStrokes, findPeaks, smooth, strokeIndexAt } from "../js/strokes.js";
 import { readVideoInfo } from "../js/mp4-info.js";
-import { buildCSV, buildJSON } from "../js/export.js";
+import { buildCSV } from "../js/export.js";
 import { rowingPose, rowingSequence } from "./helpers.js";
 
 const near = (a, b, tol = 0.01) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
@@ -101,10 +101,3 @@ test("CSV：1行1フレーム、ストローク番号と漕ぐ側が入る", () 
   assert.equal(row[header.indexOf("lWrist_source")], "est");
 });
 
-test("JSON：形式名・条件・データを含む", () => {
-  const json = buildJSON({ view: "left" }, [null], []);
-  assert.equal(json.format, "oc-form-analysis");
-  assert.equal(json.view, "left");
-  assert.equal(json.frames.length, 1);
-  assert.ok(json.notes.angles);
-});

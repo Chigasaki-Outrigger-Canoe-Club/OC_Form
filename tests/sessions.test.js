@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSession, summarize, sortSessions, viewToRecord } from "../js/sessions.js";
+import { buildSession, sortSessions, viewToRecord, buildSessionFile, parseSessionFile } from "../js/sessions.js";
 
-const LABELS = { front: "前", left: "左", right: "右", back: "後ろ" };
 const athlete = { id: "a1", name: "Manato", values: { height: "166" } };
 
 const view = (pose) => ({
@@ -30,13 +29,20 @@ test("セッション：選手・日付・メモ・方向ごとのデータ", ()
   assert.equal(buildSession({ id: "s1", athlete, date: "", memo: "", views: {} }).id, "s1");
 });
 
-test("一覧の要約と並び順（新しい練習日が先）", () => {
-  const s = buildSession({ athlete, date: "2026-10-20", memo: "", views: { left: view([[1]]), right: view(null) } });
-  assert.equal(summarize(s, LABELS), "左・右（解析済み 1）");
+test("一覧の並び順（新しい練習日が先）", () => {
   const list = sortSessions([
     { date: "2026-10-01", savedAt: "2026-10-01T00:00:00Z" },
     { date: "2026-10-20", savedAt: "2026-10-20T01:00:00Z" },
     { date: "2026-10-20", savedAt: "2026-10-20T05:00:00Z" },
   ]);
   assert.deepEqual(list.map((x) => x.savedAt), ["2026-10-20T05:00:00Z", "2026-10-20T01:00:00Z", "2026-10-01T00:00:00Z"]);
+});
+
+test("ファイル：書き出し→読み込みで元に戻る、形式が違えばエラー", () => {
+  const s = buildSession({ athlete, date: "2026-10-20", memo: "m", views: { left: view([[1]]) } });
+  const file = buildSessionFile(s);
+  assert.equal(file.format, "oc-form-session");
+  assert.deepEqual(parseSessionFile(JSON.stringify(file)), JSON.parse(JSON.stringify(s)));
+  assert.throws(() => parseSessionFile('{"format":"oc-form-analysis"}'), /このシステム/);
+  assert.throws(() => parseSessionFile("not json"));
 });

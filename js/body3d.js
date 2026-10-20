@@ -91,6 +91,17 @@ export function estimatePaddle(body, size) {
   };
 }
 
+// ブレードの輪郭：首（シャフトとの境目）が細く、先端寄りで最も広く、先は丸くとがる涙形
+// [ブレード長に対する位置, 最大幅に対する幅]。アウトリガー用パドル（PILIなど）の写真を目安にした
+const BLADE_PROFILE = [[0, 0.1], [0.1, 0.35], [0.25, 0.62], [0.45, 0.85], [0.65, 0.98], [0.78, 1], [0.88, 0.9], [0.95, 0.65], [0.985, 0.35], [1, 0]];
+
+// 輪郭の点（ブレード面の座標：x＝幅方向、y＝首が0で先端が −length）。右側→先端→左側の順
+export function bladeOutline(width, length) {
+  const right = BLADE_PROFILE.map(([t, w]) => ({ x: (w * width) / 2, y: -t * length }));
+  const left = right.slice(0, -1).reverse().map((p) => ({ x: -p.x, y: p.y }));
+  return [...right, ...left];
+}
+
 // ---- 表示用のカメラ計算 ----
 // view：{ yaw, pitch, distance, target }（角度はラジアン）
 // yaw=0 で選手の正面（+Z側）から見る

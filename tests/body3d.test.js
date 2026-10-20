@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toBodyFrame, estimatePaddle, cameraBasis, project } from "../js/body3d.js";
+import { toBodyFrame, estimatePaddle, cameraBasis, project, bladeOutline } from "../js/body3d.js";
 import { readVideoInfo } from "../js/mp4-info.js";
 import { P } from "../js/angles.js";
 import { seatedBody, toMediaPipe } from "./helpers.js";
@@ -69,4 +69,17 @@ test("MP4：圧縮形式（H.264）を読み取る", async () => {
   const { readFileSync } = await import("node:fs");
   const buf = readFileSync(new URL("./fixtures/30fps.mp4", import.meta.url));
   assert.equal(readVideoInfo(new DataView(buf.buffer, buf.byteOffset, buf.byteLength)).codec, "avc1");
+});
+
+test("ブレードの輪郭：幅と長さが寸法どおり、左右対称、先端が最も下", () => {
+  const pts = bladeOutline(0.25, 0.48);
+  const xs = pts.map((p) => p.x);
+  assert.ok(Math.abs(Math.max(...xs) - 0.125) < 1e-9 && Math.abs(Math.min(...xs) + 0.125) < 1e-9);
+  assert.ok(Math.abs(Math.min(...pts.map((p) => p.y)) + 0.48) < 1e-9);
+  const tip = pts.find((p) => p.y === -0.48);
+  assert.equal(tip.x, 0);
+  // 最も広いのは首ではなく先端寄り（長さの半分より下）
+  const widest = pts.find((p) => p.x === Math.max(...xs));
+  assert.ok(widest.y < -0.24);
+  for (const p of pts) assert.ok(pts.some((q) => Math.abs(q.x + p.x) < 1e-9 && Math.abs(q.y - p.y) < 1e-9));
 });

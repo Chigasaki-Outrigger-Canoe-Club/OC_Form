@@ -89,6 +89,12 @@
 
       <section class="panel">
         <h2>選手情報</h2>
+        <div class="row">
+          <select id="athleteSelect" class="btn"></select>
+          <button class="btn" id="addAthlete">＋追加</button>
+          <button class="btn" id="renameAthlete">名前変更</button>
+          <button class="btn" id="removeAthlete">削除</button>
+        </div>
         <dl class="info">
           <dt>身長</dt><dd><input type="number" id="height" min="100" max="230"> cm</dd>
           <dt>体重</dt><dd><input type="number" id="weight" min="30" max="200"> kg</dd>
@@ -96,7 +102,15 @@
           <dt>ブレード長</dt><dd><input type="number" id="bladeLength" min="20" max="70"> cm</dd>
           <dt>ブレード幅</dt><dd><input type="number" id="bladeWidth" min="10" max="40"> cm</dd>
         </dl>
-        <p class="muted">このブラウザ内に保存されます。パドル寸法は3D表示に使います。未入力は標準値を使います。</p>
+        <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内のみ）。パドル寸法は3D表示に使います。未入力は標準値を使います。</p>
+        <div class="row">
+          <button class="btn" id="exportAthletes">選手データを書き出す</button>
+          <label class="btn">
+            選手データを読み込む
+            <input type="file" id="importAthletes" accept=".json,application/json" hidden>
+          </label>
+        </div>
+        <p class="muted">ブラウザのデータを消すと選手データも消えます。書き出したファイルで別のPCにも移せます。<span id="athleteNote"></span></p>
       </section>
 
       <section class="panel">

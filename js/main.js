@@ -10,6 +10,7 @@ import { buildCSV, buildJSON } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
 import { COLOR } from "./overlay.js";
+import * as athletes from "./athletes.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -159,22 +160,76 @@ function tick() {
   if (!video.paused) requestAnimationFrame(tick);
 }
 
-// ================= 選手情報（ブラウザ内に保存） =================
-const ATHLETE_KEY = "oc-form-athlete";
+// ================= 選手情報（選手ごとにブラウザ内に保存） =================
 const athleteInputs = ["height", "weight", "paddle", "bladeLength", "bladeWidth"];
 // 未入力時の標準値（パドル全長 inch、ブレード cm）
 const DEFAULTS = { paddle: 50, bladeLength: 48, bladeWidth: 25 };
 
-function loadAthlete() {
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(ATHLETE_KEY)) || {}; } catch { /* 保存なし */ }
-  athleteInputs.forEach((id) => (el(id).value = saved[id] ?? ""));
+let store = athletes.loadStore(localStorage);
+if (store.list.length) athletes.saveStore(localStorage, store); // 引き継いだ保存をすぐ確定する
+
+function inputValues() {
+  return Object.fromEntries(athleteInputs.map((id) => [id, el(id).value]));
+}
+
+function saveAthletes(next) {
+  store = next;
+  const ok = athletes.saveStore(localStorage, store);
+  el("athleteNote").textContent = ok ? "" : "このブラウザでは保存できません（書き出しでバックアップしてください）";
+  renderAthletes();
+}
+
+// 選手の一覧と入力欄を表示する
+function renderAthletes() {
+  const select = el("athleteSelect");
+  select.innerHTML = "";
+  if (!store.list.length) select.add(new Option("（選手を追加してください）", ""));
+  store.list.forEach((a) => select.add(new Option(a.name, a.id, false, a.id === store.current)));
+  const values = athletes.currentAthlete(store)?.values ?? {};
+  athleteInputs.forEach((id) => (el(id).value = values[id] ?? ""));
   Object.entries(DEFAULTS).forEach(([id, v]) => (el(id).placeholder = `標準 ${v}`));
   showPaddleCm();
+  updateDisplay();
 }
+
+el("athleteSelect").addEventListener("change", (e) => saveAthletes({ ...store, current: e.target.value }));
+
+el("addAthlete").addEventListener("click", () => {
+  const name = prompt("選手の名前");
+  // 最初の1人は今の入力値を引き継ぐ。2人目以降は空欄から
+  if (name) saveAthletes(athletes.addAthlete(store, name, store.list.length ? {} : inputValues()));
+});
+
+el("renameAthlete").addEventListener("click", () => {
+  const a = athletes.currentAthlete(store);
+  const name = a && prompt("新しい名前", a.name);
+  if (name) saveAthletes(athletes.renameAthlete(store, a.id, name));
+});
+
+el("removeAthlete").addEventListener("click", () => {
+  const a = athletes.currentAthlete(store);
+  if (a && confirm(`${a.name} を削除しますか？（元に戻せません）`)) saveAthletes(athletes.removeAthlete(store, a.id));
+});
+
+el("exportAthletes").addEventListener("click", () => {
+  download("oc-form_athletes.json", JSON.stringify(athletes.buildBackup(store), null, 2), "application/json");
+});
+
+el("importAthletes").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  try {
+    const next = athletes.parseBackup(await file.text());
+    if (confirm(`${next.list.length} 人の選手データで置き換えますか？`)) saveAthletes(next);
+  } catch (err) {
+    alert(`読み込めませんでした：${err.message}`);
+  }
+});
 
 function athlete() {
   return {
+    name: athletes.currentAthlete(store)?.name ?? null,
     heightCm: Number(el("height").value) || null,
     weightKg: Number(el("weight").value) || null,
     paddleInch: Number(el("paddle").value) || null,
@@ -200,11 +255,10 @@ function showPaddleCm() {
   el("paddleCm").textContent = cm ? `（${cm} cm）` : "";
 }
 
+// 入力を変えたら選択中の選手に保存（選手がいなければ保存しない）
 athleteInputs.forEach((id) => el(id).addEventListener("change", () => {
-  const values = Object.fromEntries(athleteInputs.map((k) => [k, el(k).value]));
-  try { localStorage.setItem(ATHLETE_KEY, JSON.stringify(values)); } catch { /* 保存できない環境 */ }
-  showPaddleCm();
-  updateDisplay();
+  if (athletes.currentAthlete(store)) saveAthletes(athletes.updateValues(store, inputValues()));
+  else { showPaddleCm(); updateDisplay(); }
 }));
 
 // ================= 骨格推定 =================
@@ -346,7 +400,8 @@ function download(name, text, type) {
   URL.revokeObjectURL(url);
 }
 
-const baseName = () => data().name.replace(/\.[^.]+$/, "");
+// 書き出しのファイル名：選手名_動画名
+const baseName = () => [athlete().name, data().name.replace(/\.[^.]+$/, "")].filter(Boolean).join("_");
 
 el("exportCSV").addEventListener("click", () => {
   const d = data();
@@ -455,5 +510,5 @@ function updateDisplay() {
   }
 }
 
-loadAthlete();
 selectView("left");
+renderAthletes();

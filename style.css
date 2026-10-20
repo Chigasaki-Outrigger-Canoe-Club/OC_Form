@@ -180,3 +180,4 @@ body {
 .table tbody tr.clickable:hover, .table tbody tr.current { background: var(--bg); }
 
 .editor { border-color: var(--accent); }
+.muted.small { font-size: 0.8rem; }

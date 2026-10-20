@@ -455,7 +455,9 @@ function renderFeedback(usedViews) {
     if (row.flagged.length) parts.push(`<span class="flag">改善候補（${row.flagged.map((s) => SIDE_LABEL[s]).join("・")}）</span><br>${row.comment}`);
     if (row.lr) parts.push(`<span class="flag lr">左右差</span><br>${row.lr}`);
     if (!parts.length) parts.push('<span class="muted">目安の範囲内・左右差なし</span>');
+    if (row.note) parts.push(`<span class="muted">${row.note}</span>`);
     if (row.details?.length) parts.push(`<ul class="details">${row.details.map((d) => `<li>${d}</li>`).join("")}</ul>`);
+    if (row.basis?.length) parts.push(`<span class="muted small">根拠：${row.basis.join("／")}</span>`);
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${row.label}${row.extra ? `<br><span class="muted">${row.extra}</span>` : ""}</td><td>${value}</td><td>${parts.join("<br>")}</td>`;
     body.appendChild(tr);

@@ -5,7 +5,9 @@
 //   2. 目安の範囲内でも左右差が大きい項目 →「左右差」として、どちらをどう直すかをコメント
 //   3. ストロークのリズム → 動画ごと・漕ぐ側ごとの内訳、乱れたストローク、前半と後半の差
 // 注意：
-// - 目安の値（LIMITS）は一般的な指導ポイントをもとにした暫定値で、科学的に検証したものではない
+// - 目安の根拠は項目ごとに basis で示す（下の SOURCES）。根拠の強さの順：
+//     OC研究（アウトリガーの論文）＞ 近い競技の研究（ドラゴンボート）＞ OCの指導資料（クラブ・協会）＞ ボートの考え方の応用 ＞ 暫定
+//   OCの研究はまだ少なく（エルゴでの小規模な研究が中心）、確定した「お手本」の数値はない
 // - 3Dは1台ずつのカメラの推定を合わせたもので誤差を含む。cm は MediaPipe の推定単位（およそ）
 // - 必要な方向の動画がない指標は評価しない（例：シャフトの左右の傾きは前からの動画が必要）
 // 目安を変えるときは LIMITS だけを直す。
@@ -16,8 +18,8 @@ import { detectDrive } from "./drive.js";
 import { spineFlexion } from "./spine.js";
 
 export const LIMITS = {
-  trunkRange: 15,      // 体幹の前傾〜起こしの幅（度）。小さいと改善候補
-  rotationRange: 15,   // 上体の回旋（ねじれ）の幅（度）。小さいと改善候補
+  trunkRange: 9,       // 体幹の前傾〜起こしの幅（度）。小さいと改善候補。OC研究の平均 9〜17°の下限
+  rotationRange: 10,   // 上体の回旋（ねじれ）の幅（度）。小さいと改善候補。OC研究の平均 18〜21°（ばらつき±9°）
   spineRange: 5,       // 背骨の丸まりの変化の幅（度）。小さいと改善候補
   catchFlexion: 25,    // キャッチでの背骨の丸まり（度）。大きいと改善候補
   bottomElbow: 150,    // ドライブ中盤の下の手の肘（度）。小さい（曲がる）と改善候補
@@ -28,6 +30,16 @@ export const LIMITS = {
   rhythmCV: 5,         // ストローク時間のばらつき（%）。大きいと改善候補
   outlier: 0.08,       // 中央値から8%以上ずれたストロークを「乱れ」として挙げる
   trend: 0.03,         // 前半と後半の平均の差（秒）。これ以上なら挙げる
+};
+
+// 根拠の資料（短い名前。詳しい出典は画面の「根拠の資料」に載せている）
+export const SOURCES = {
+  sealey: "OC研究（Sealey 2011）",
+  review: "OC研究レビュー（Canyon & Sealey 2016）",
+  gomory: "ドラゴンボート研究（Gomory）",
+  guide: "OC指導資料",
+  rowing: "ボートの考え方（World Rowing）",
+  draft: "暫定（裏付けなし）",
 };
 
 const SIDE = { right: "右漕ぎ", left: "左漕ぎ" };
@@ -113,48 +125,49 @@ export function sideMetrics(frames, side, spine = null, views = []) {
 // better："high"＝大きいほうがよい、"low"＝小さいほうがよい、null＝方向なし（左右差だけ見る）
 // bad：目安から外れたら true、lr：左右差として挙げる差、need：評価できない理由（値が null のとき）
 const ITEMS = [
-  { key: "catchReach", label: "キャッチのリーチ（下の手が腰より前に出る距離）", unit: "cm", better: "high", lr: 5,
+  { key: "catchReach", basis: ["gomory", "guide"], label: "キャッチのリーチ（下の手が腰より前に出る距離）", unit: "cm", better: "high", lr: 5,
     weak: "キャッチで漕ぐ側の肩をもう一段前に出し、股関節から前に倒してリーチを伸ばしてください。" },
-  { key: "exitPosition", label: "抜きの位置（ドライブの終わり、腰より前が正）", unit: "cm", better: null, lr: 5,
+  { key: "exitPosition", basis: ["guide"], label: "抜きの位置（ドライブの終わり、腰より前が正）", unit: "cm", better: null, lr: 5,
     bad: (v) => v < LIMITS.exitBehind || v > LIMITS.exitAhead,
     comment: (v) => (v < LIMITS.exitBehind
       ? "腰より後ろまで引いています。ブレードが腰の横に来たら抜き、すぐ次のキャッチへ移ってください（後ろまで引くと艇を沈める力になりやすい）。"
       : "早く抜けていて引きが短めです。腰の横まで引き切ってから抜いてください。"),
     weak: "抜く位置が左右でそろうよう、抜きのタイミングを合わせてください。" },
-  { key: "topHand", label: "キャッチでの上の手の高さ（肩から）", unit: "cm", better: "high", lr: 4,
+  { key: "topHand", basis: ["guide"], label: "キャッチでの上の手の高さ（肩から）", unit: "cm", better: "high", lr: 4,
     bad: (v) => v < LIMITS.topHand,
     comment: () => "キャッチで上の手が低いです。上の手を目の高さ付近まで上げ、下の手の真上に重ねてブレードを立てて入れてください。",
     weak: "キャッチで上の手をもう少し高く保ち、パドルを立ててください。" },
-  { key: "trunkRange", label: "体幹の前傾〜起こしの幅", unit: "°", better: "high", lr: 3,
+  { key: "trunkRange", basis: ["sealey"], label: "体幹の前傾〜起こしの幅", unit: "°", better: "high", lr: 3,
     bad: (v) => v < LIMITS.trunkRange,
     comment: () => "体幹の動きが小さく、腕で引いている可能性があります。キャッチで股関節から前に倒し、ドライブで体幹を起こす力で引いてください。",
     weak: "体幹の前傾〜起こしを大きく使えていません。股関節からの倒し込みを左右でそろえてください。" },
-  { key: "rotationRange", label: "上体の回旋（肩と骨盤のねじれ）の幅", unit: "°", better: "high", lr: 3,
+  { key: "rotationRange", basis: ["sealey", "guide"], label: "上体の回旋（肩と骨盤のねじれ）の幅", unit: "°", better: "high", lr: 3,
     bad: (v) => v < LIMITS.rotationRange,
     comment: () => "上体のねじれが小さいです。キャッチで漕ぐ側の肩を前に出してねじり、ねじりを戻す力で引いてください。",
     weak: "ねじりが小さくなっています。キャッチで漕ぐ側の肩を前に出す意識を強めてください。" },
-  { key: "spineRange", label: "背骨の丸まりの変化（腹直筋・骨盤の動き）", unit: "°", better: "high", lr: 3,
+  { key: "spineRange", basis: ["draft"], label: "背骨の丸まりの変化（腹直筋・骨盤の動き）", unit: "°", better: "high", lr: 3,
     need: "横からの動画のシルエットが必要です（測れなかったか、横からの動画がありません）",
     bad: (v) => v < LIMITS.spineRange,
     comment: () => "背骨の丸まり方がほとんど変わらず、体幹を固めたまま漕いでいる可能性があります。ドライブで腹筋（腹直筋）を締めて骨盤を起こす動きを確認してください。",
     weak: "腹筋・骨盤の動きが小さくなっています。ドライブで腹筋を締める意識を左右でそろえてください。" },
-  { key: "catchFlexion", label: "キャッチでの背骨の丸まり", unit: "°", better: "low", lr: 4,
+  { key: "catchFlexion", basis: ["rowing"], label: "キャッチでの背骨の丸まり", unit: "°", better: "low", lr: 4,
     need: "横からの動画のシルエットが必要です",
     bad: (v) => v > LIMITS.catchFlexion,
-    comment: () => "キャッチで背中が丸まっています。背中を丸めて手を伸ばすのではなく、背筋を伸ばしたまま股関節から倒してください（力が艇に伝わりやすく、腰の負担も減る）。",
+    comment: () => "キャッチで背中が丸まっています。背中を丸めて手を伸ばすのではなく、背筋を伸ばしたまま股関節から倒してください（ボートでもキャッチは股関節からの前傾が基本。OCではそこに漕ぐ側の肩を前へ出すねじりを加えます）。",
     weak: "キャッチで背中が丸まりやすくなっています。股関節から倒す意識を強めてください。" },
-  { key: "bottomElbow", label: "ドライブ中盤の下の手の肘", unit: "°", better: "high", lr: 5,
+  { key: "bottomElbow", basis: ["guide"], label: "ドライブ中盤の下の手の肘", unit: "°", better: "high", lr: 5,
     bad: (v) => v < LIMITS.bottomElbow,
     comment: () => "下の手の肘が曲がり、腕で引いています。下の腕はほぼ伸ばしたまま、体幹のねじり戻しと前傾の起こしで引いてください。",
     weak: "下の手の肘が曲がりやすくなっています。下の腕を伸ばしたまま引く意識を強めてください。" },
-  { key: "shaftTilt", label: "ドライブ中盤のシャフトの左右の傾き", unit: "°", better: "low", lr: 4,
+  { key: "shaftTilt", basis: ["guide"], label: "ドライブ中盤のシャフトの左右の傾き", unit: "°", better: "low", lr: 4,
     need: "前からの動画がないため評価しません（横・後ろからでは左右の傾きを正しく測れません）",
     bad: (v) => v > LIMITS.shaftTilt,
     comment: () => "シャフトが左右に傾いています。上の手を下の手の真上に重ね、パドルを立てて引いてください。",
     weak: "シャフトが傾きやすくなっています。上の手を艇の外側へ押し出して、パドルを立ててください。" },
-  { key: "driveRatio", label: "ドライブ（力を入れている時間）の割合", unit: "%", better: null, lr: 5,
+  { key: "driveRatio", basis: ["sealey"], label: "ドライブ（力を入れている時間）の割合", unit: "%", better: null, lr: 5,
+    note: "研究の「推進＝約56%」はブレードが水中にある時間。この値は手が後ろへ速く動いている区間なので定義が違い、直接は比べられません。",
     weak: "ドライブと戻しの時間配分が左右で違います。戻しを急がず、同じリズムで漕いでください。" },
-  { key: "pathNoise", label: "ドライブ中の下の手の軌道の乱れ", unit: "mm", better: "low", lr: 3,
+  { key: "pathNoise", basis: ["gomory"], label: "ドライブ中の下の手の軌道の乱れ", unit: "mm", better: "low", lr: 3,
     weak: "ドライブ中の手の軌道が乱れています。キャッチからきれいな弧で引き切れているか確認してください（乱れ＝力が抜けている・ブレードがぶれている可能性）。" },
 ];
 
@@ -216,6 +229,12 @@ export function rhythmDetail(views) {
   return { cv, spm: 60 / m, count: secs.length, lines };
 }
 
+// ピッチ（spm）の位置づけ。研究で比べられた「ハワイアン（55以下）」「タヒチアン（65以上）」との比較
+export function rateNote(spm) {
+  const style = spm <= 55 ? "ハワイアン（55 spm以下）の範囲" : spm >= 65 ? "タヒチアン（65 spm以上）の範囲" : "ハワイアンとタヒチアンの間";
+  return `ピッチ ${spm.toFixed(1)} spm は${style}です。研究ではどちらも同じくらいの速さで、55 spm 前後は体への負担が小さいとされています（エルゴでの研究）。`;
+}
+
 // ---- コメントの一覧 ----
 // fused：fuseViews の結果、views：[{ name, fps, strokes }]
 // 戻り値の各行：{ key, label, unit, values, flagged:[側], comment, lr, reason }
@@ -229,7 +248,8 @@ export function buildFeedback(fused, views) {
     const present = Object.entries(values).filter(([, v]) => v != null);
     const flagged = item.bad ? present.filter(([, v]) => item.bad(v)).map(([s]) => s) : [];
     return {
-      key: item.key, label: item.label, unit: item.unit, values, flagged,
+      key: item.key, label: item.label, unit: item.unit, values, flagged, note: item.note ?? null,
+      basis: item.basis.map((b) => SOURCES[b]),
       comment: flagged.length ? item.comment(values[flagged[0]]) : null,
       lr: lrComment(item, values),
       reason: present.length ? null : item.need ?? "データが足りないため評価しません",
@@ -242,6 +262,8 @@ export function buildFeedback(fused, views) {
     flagged: r && r.cv > LIMITS.rhythmCV ? ["all"] : [],
     comment: r && r.cv > LIMITS.rhythmCV ? `ばらつきが目安（${LIMITS.rhythmCV}%）より大きいです。下の内訳で乱れたストロークを確認し、特にパドルチェンジの前後でリズムを崩さないようにしてください。` : null,
     lr: null, details: r?.lines ?? [], extra: r ? `平均 ${r.spm.toFixed(1)} spm、${r.count} ストローク` : "",
+    note: r ? rateNote(r.spm) : null,
+    basis: [SOURCES.sealey, SOURCES.review],
     reason: r ? null : "ストロークが3本以上ある動画がありません",
   });
   return rows;

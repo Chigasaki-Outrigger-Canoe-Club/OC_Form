@@ -68,7 +68,7 @@ const rhythmViews = [{ name: "left", fps: 30, strokes: [0, 40, 80, 120, 160, 200
 test("コメント：目安の範囲内でも左右差が大きければ、劣っている側を挙げる", () => {
   const fused = { right: { frames: stroke({ twist: 30 }), views: ["left"] }, left: { frames: stroke({ twist: 18 }).map(mirror), views: ["left"] } };
   const rows = Object.fromEntries(buildFeedback(fused, rhythmViews).map((r) => [r.key, r]));
-  assert.deepEqual(rows.rotationRange.flagged, []); // どちらも目安（15°）以上
+  assert.deepEqual(rows.rotationRange.flagged, []); // どちらも目安（10°）以上
   assert.match(rows.rotationRange.lr, /左漕ぎのほうが劣っています/);
   assert.equal(rows.shaftTilt.values.right, null);
   assert.match(rows.shaftTilt.reason, /前からの動画がない/);
@@ -102,3 +102,15 @@ function mirror(f) {
   for (const [a, b] of swap) [out[a], out[b]] = [out[b], out[a]];
   return out;
 }
+
+test("根拠：すべての項目に資料が付く。ピッチの位置づけ", async () => {
+  const { rateNote, SOURCES } = await import("../js/feedback.js");
+  const fused = { right: { frames: stroke(), views: ["left"] }, left: null };
+  for (const row of buildFeedback(fused, rhythmViews)) {
+    assert.ok(row.basis.length > 0, row.key);
+    for (const b of row.basis) assert.ok(Object.values(SOURCES).includes(b));
+  }
+  assert.match(rateNote(52), /ハワイアン/);
+  assert.match(rateNote(68), /タヒチアン/);
+  assert.match(rateNote(60), /間/);
+});

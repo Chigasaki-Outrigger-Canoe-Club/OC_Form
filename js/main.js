@@ -291,10 +291,16 @@ function setSessionLabel(text) {
   el("sessionLabel").textContent = text;
 }
 
-el("saveSession").addEventListener("click", async () => {
-  const a = athletes.currentAthlete(store);
-  if (!a) return alert("先に選手を追加・選択してください");
+el("saveSession").addEventListener("click", () => {
+  if (!athletes.currentAthlete(store)) return alert("先に選手を追加・選択してください");
   if (!Object.keys(views).length) return alert("動画が読み込まれていません");
+  saveCurrentSession();
+});
+
+// 開いているデータを保存する（開いたセッションなら上書き）。成功したら true
+async function saveCurrentSession() {
+  const a = athletes.currentAthlete(store);
+  let ok = false;
   const keepVideo = el("saveVideo").checked;
   const session = sessions.buildSession({
     id: sessionId, athlete: a, date: el("sessionDate").value || today(), memo: el("sessionMemo").value, views,
@@ -309,11 +315,13 @@ el("saveSession").addEventListener("click", async () => {
     sessionId = session.id;
     setSessionLabel(`保存済み：${session.date} ${session.memo}`);
     el("sessionNote").textContent = `保存しました（${new Date().toLocaleTimeString()}）`;
+    ok = true;
   } catch (err) {
     el("sessionNote").textContent = `保存できませんでした：${err.message}`;
   }
   renderSessions();
-});
+  return ok;
+}
 
 el("newSession").addEventListener("click", () => {
   if (Object.keys(views).length && !confirm("読み込んでいる動画と解析結果を閉じます。よろしいですか？（保存済みのデータは消えません）")) return;
@@ -431,15 +439,59 @@ async function analyzeCurrent() {
 el("analyze").addEventListener("click", analyzeCurrent);
 
 // 読み込んだ全方向のうち、未解析の動画を順番に解析する
-el("analyzeAll").addEventListener("click", async () => {
-  const targets = Object.keys(VIEW_LABELS).filter((v) => views[v]?.url && !views[v].pose);
-  if (!targets.length) return alert("未解析の動画がありません（解析済みのものはそのまま使います）");
-  for (const v of targets) {
+el("analyzeAll").addEventListener("click", () => {
+  if (!unanalyzedViews().length) return alert("未解析の動画がありません（解析済みのものはそのまま使います）");
+  analyzeAllViews();
+});
+
+const unanalyzedViews = () => Object.keys(VIEW_LABELS).filter((v) => views[v]?.url && !views[v].pose);
+
+// 未解析の動画を順番に解析する。全部できたら true（中止・失敗したらそこで止めて false）
+async function analyzeAllViews(onStep = () => {}) {
+  const targets = unanalyzedViews();
+  for (const [n, v] of targets.entries()) {
+    onStep(`${VIEW_LABELS[v]}を解析中（${n + 1} / ${targets.length}）`);
     selectView(v);
     await waitForVideo();
-    const ok = await analyzeCurrent();
-    if (!ok) break; // 中止・失敗したらそこで止める
+    if (!(await analyzeCurrent())) return false;
   }
+  return true;
+}
+
+// ================= まとめて実行：解析 → 3Dモデル → 保存 =================
+el("runAll").addEventListener("click", async () => {
+  if (analyzing) return;
+  const status = (text) => (el("runAllStatus").textContent = text);
+  if (!athletes.currentAthlete(store)) return status("先に選手を追加・選択してください（保存先になります）");
+  if (!Object.values(views).some((d) => d.url)) return status("動画が読み込まれていません。各方向のタブで動画を選択してください");
+
+  el("runAll").disabled = true;
+  const skipped = Object.keys(views).filter((v) => views[v].pose).map((v) => VIEW_LABELS[v]);
+  const note = skipped.length ? `（解析済みの ${skipped.join("・")} はそのまま使います）` : "";
+
+  // 1. 解析
+  const analyzed = await analyzeAllViews((step) => status(`1/3 ${step} ${note}`));
+  if (!analyzed) {
+    el("runAll").disabled = false;
+    return status("解析を中止したか、失敗しました。ここまでの結果は保存していません。");
+  }
+
+  // 2. 3Dモデル（解析の終わりに作り直し済み。ここでは結果を確認）
+  refreshFusion();
+  if (!fused?.right && !fused?.left) {
+    el("runAll").disabled = false;
+    return status("2/3 3Dモデルを作れませんでした（ストロークが検出できていない可能性）。ストローク表を確認してください。保存はしていません。");
+  }
+  document.querySelector("input[name=mode3d][value=fused]").checked = true;
+
+  // 3. 保存
+  status("3/3 保存中…");
+  const saved = await saveCurrentSession();
+  el("runAll").disabled = false;
+  status(saved
+    ? `完了：解析・3Dモデル作成・保存が終わりました。${el("fusionInfo").textContent}`
+    : "3/3 保存できませんでした。セッション欄のメッセージを確認してください。");
+  updateDisplay();
 });
 
 // 動画の表示準備ができるまで待つ
@@ -457,6 +509,7 @@ el("showSkeleton").addEventListener("change", updateDisplay);
 function setAnalyzing(on) {
   el("analyze").disabled = on;
   el("analyzeAll").disabled = on;
+  el("saveSession").disabled = on;
   el("stop").disabled = !on;
 }
 

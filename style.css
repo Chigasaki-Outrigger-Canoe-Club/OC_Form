@@ -1,0 +1,115 @@
+/* 色と余白はここでまとめて定義し、各所で使い回す */
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --text: #1c2430;
+  --muted: #667085;
+  --accent: #0b6e99;
+  --border: #d7dde4;
+  --gap: 12px;
+  --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161c;
+    --panel: #1b2129;
+    --text: #e6e9ee;
+    --muted: #98a2b3;
+    --accent: #4fb3e0;
+    --border: #2e3742;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: var(--gap) 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header h1 { margin: 0; font-size: 1.2rem; }
+
+.badge {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--gap);
+  padding: 16px;
+}
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.panel h2 { margin: 0 0 var(--gap); font-size: 1rem; }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--gap);
+}
+
+/* ボタン類は .btn と .tab の2種類だけ */
+.btn, .tab, input[type="number"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.btn:hover, .tab:hover { border-color: var(--accent); }
+
+.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab.loaded::after { content: " ●"; }
+
+video {
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius);
+  aspect-ratio: 16 / 9;
+}
+
+#seek { width: 100%; margin-bottom: var(--gap); }
+
+.muted { color: var(--muted); font-size: 0.85rem; }
+
+.info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px var(--gap);
+  margin: var(--gap) 0;
+}
+
+.info dt { color: var(--muted); }
+.info dd { margin: 0; font-variant-numeric: tabular-nums; }
+.info input { width: 6em; cursor: text; }

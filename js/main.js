@@ -11,6 +11,7 @@ import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
 import { COLOR } from "./overlay.js";
 import * as athletes from "./athletes.js";
+import * as sessions from "./sessions.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -22,7 +23,8 @@ const fpsInput = el("fps");
 const VIEW_LABELS = { front: "前", left: "左", right: "右", back: "後ろ" };
 const ANGLE_LABELS = { ...Object.fromEntries(Object.entries(ANGLES).map(([k, a]) => [k, a.label])), trunk: TRUNK_LABEL };
 
-// 方向ごとのデータ { left: { url, name, fps, fpsSource, pose, world, body, strokes }, ... }
+// 方向ごとのデータ { left: { file, url, name, fps, fpsSource, pose, world, body, strokes }, ... }
+// file＝動画ファイル（保存用）。保存済みセッションを動画なしで開いたときは file・url が null
 // pose＝2D画像座標、world＝MediaPipeの3D推定、body＝worldを選手基準に変換した座標
 const views = {};
 let currentView = "front";
@@ -33,7 +35,7 @@ const data = () => views[currentView];
 const fps = () => Number(fpsInput.value) || 60;
 const totalFrames = () => frameCount(video.duration || 0, fps());
 const currentFrame = () => clampFrame(timeToFrame(video.currentTime, fps()), totalFrames());
-const loaded = () => Boolean(data()) && video.readyState > 0;
+const loaded = () => Boolean(data()?.url) && video.readyState > 0;
 
 // ================= 方向の切り替え =================
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -48,16 +50,19 @@ function selectView(view) {
     tab.classList.toggle("loaded", Boolean(views[tab.dataset.view]));
   });
   const d = data();
-  if (d) {
+  if (d?.url) {
     video.src = d.url;
-    fpsInput.value = d.fps;
   } else {
     video.removeAttribute("src");
     video.load();
   }
+  if (d) fpsInput.value = d.fps;
   el("fileName").textContent = d ? d.name : "未選択";
   el("fpsSource").textContent = d ? d.fpsSource : "";
-  showStatus(d ? "読み込み中…" : "「動画を選択」から、この方向の動画を読み込んでください");
+  el("progress").textContent = d?.pose ? `解析済み（${d.pose.length} フレーム）` : "未解析";
+  showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
+    : d.url ? "読み込み中…"
+    : `動画は保存されていません。「動画を選択」で ${d.name} を選ぶと、解析結果と一緒に表示されます`);
   renderStrokes();
   updateDisplay();
 }
@@ -67,11 +72,20 @@ el("fileInput").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   event.target.value = "";
   if (!file) return;
-  if (views[currentView]) URL.revokeObjectURL(views[currentView].url);
+  const old = views[currentView];
+  if (old?.url) URL.revokeObjectURL(old.url);
+
+  // 保存済みの解析結果があり、同じ名前の動画なら、解析結果をそのまま使う
+  if (old?.pose && !old.url && old.name === file.name) {
+    old.file = file;
+    old.url = URL.createObjectURL(file);
+    return selectView(currentView);
+  }
 
   // fpsは動画のヘッダから読む。読めなければ手入力
   const info = readVideoInfo(new DataView(await file.arrayBuffer()));
   views[currentView] = {
+    file,
     url: URL.createObjectURL(file),
     name: file.name,
     fps: info ? info.fps : fps(),
@@ -82,7 +96,6 @@ el("fileInput").addEventListener("change", async (event) => {
     body: null,
     strokes: [],
   };
-  el("progress").textContent = "未解析";
   selectView(currentView);
 });
 
@@ -190,9 +203,15 @@ function renderAthletes() {
   Object.entries(DEFAULTS).forEach(([id, v]) => (el(id).placeholder = `標準 ${v}`));
   showPaddleCm();
   updateDisplay();
+  renderSessions();
 }
 
-el("athleteSelect").addEventListener("change", (e) => saveAthletes({ ...store, current: e.target.value }));
+el("athleteSelect").addEventListener("change", (e) => {
+  // 選手を変えたら、開いているデータは「新規」扱い（保存すると新しい選手のデータになる）
+  sessionId = null;
+  setSessionLabel("新規（未保存）");
+  saveAthletes({ ...store, current: e.target.value });
+});
 
 el("addAthlete").addEventListener("click", () => {
   const name = prompt("選手の名前");
@@ -260,6 +279,113 @@ athleteInputs.forEach((id) => el(id).addEventListener("change", () => {
   if (athletes.currentAthlete(store)) saveAthletes(athletes.updateValues(store, inputValues()));
   else { showPaddleCm(); updateDisplay(); }
 }));
+
+// ================= セッションの保存（ブラウザ内のIndexedDB） =================
+let sessionId = null; // 開いている保存済みセッション（新規なら null）
+const today = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
+el("sessionDate").value = today();
+
+function setSessionLabel(text) {
+  el("sessionLabel").textContent = text;
+}
+
+el("saveSession").addEventListener("click", async () => {
+  const a = athletes.currentAthlete(store);
+  if (!a) return alert("先に選手を追加・選択してください");
+  if (!Object.keys(views).length) return alert("動画が読み込まれていません");
+  const keepVideo = el("saveVideo").checked;
+  const session = sessions.buildSession({
+    id: sessionId, athlete: a, date: el("sessionDate").value || today(), memo: el("sessionMemo").value, views,
+  });
+  const videos = keepVideo
+    ? Object.fromEntries(Object.entries(views).filter(([, d]) => d.file).map(([v, d]) => [v, d.file]))
+    : {};
+  el("sessionNote").textContent = "保存中…";
+  try {
+    sessions.requestPersist();
+    await sessions.saveSession(session, videos);
+    sessionId = session.id;
+    setSessionLabel(`保存済み：${session.date} ${session.memo}`);
+    el("sessionNote").textContent = `保存しました（${new Date().toLocaleTimeString()}）`;
+  } catch (err) {
+    el("sessionNote").textContent = `保存できませんでした：${err.message}`;
+  }
+  renderSessions();
+});
+
+el("newSession").addEventListener("click", () => {
+  if (Object.keys(views).length && !confirm("読み込んでいる動画と解析結果を閉じます。よろしいですか？（保存済みのデータは消えません）")) return;
+  clearViews();
+  sessionId = null;
+  el("sessionDate").value = today();
+  el("sessionMemo").value = "";
+  setSessionLabel("新規（未保存）");
+  selectView("left");
+});
+
+function clearViews() {
+  for (const v of Object.keys(views)) {
+    if (views[v].url) URL.revokeObjectURL(views[v].url);
+    delete views[v];
+  }
+}
+
+async function openSession(id) {
+  if (analyzing) return;
+  const s = await sessions.getSession(id);
+  clearViews();
+  for (const [view, r] of Object.entries(s.views)) {
+    const blob = await sessions.getVideo(id, view);
+    views[view] = {
+      file: blob ?? null,
+      url: blob ? URL.createObjectURL(blob) : null,
+      name: r.video.name,
+      fps: r.video.fps,
+      fpsSource: r.video.fpsSource,
+      codec: r.video.codec,
+      pose: r.pose,
+      world: r.world,
+      body: r.world ? toBodyFrame(r.world) : null,
+      strokes: r.strokes,
+    };
+  }
+  sessionId = id;
+  el("sessionDate").value = s.date;
+  el("sessionMemo").value = s.memo;
+  setSessionLabel(`保存済み：${s.date} ${s.memo}`);
+  selectView(Object.keys(views)[0] ?? "left");
+}
+
+async function renderSessions() {
+  const body = el("sessionList");
+  const a = athletes.currentAthlete(store);
+  body.innerHTML = "";
+  if (!a) return;
+  let list = [];
+  try {
+    list = sessions.sortSessions(await sessions.listSessions(a.id));
+  } catch (err) {
+    el("sessionNote").textContent = `保存データを読めません：${err.message}`;
+  }
+  el("sessionCount").textContent = `（${list.length} 件）`;
+  for (const s of list) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${s.date}</td><td></td><td>${sessions.summarize(s, VIEW_LABELS)}</td>
+      <td><button class="btn small">開く</button> <button class="btn small">削除</button></td>`;
+    row.children[1].textContent = s.memo; // メモは文字としてそのまま表示
+    const [openBtn, deleteBtn] = row.querySelectorAll("button");
+    openBtn.addEventListener("click", () => openSession(s.id));
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm(`${s.date} ${s.memo} を削除しますか？（元に戻せません）`)) return;
+      await sessions.deleteSession(s.id);
+      if (sessionId === s.id) { sessionId = null; setSessionLabel("新規（未保存）"); }
+      renderSessions();
+    });
+    body.appendChild(row);
+  }
+  const usage = await sessions.storageUsage();
+  el("storageUsage").textContent = usage ? `使用量 ${usage.usedMB} MB / 上限の目安 ${usage.quotaMB} MB` : "";
+}
 
 // ================= 骨格推定 =================
 el("analyze").addEventListener("click", async () => {

@@ -114,6 +114,28 @@
       </section>
 
       <section class="panel">
+        <h2>セッション（保存データ） <span id="sessionCount" class="muted"></span></h2>
+        <p class="muted">開いているデータ：<span id="sessionLabel">新規（未保存）</span></p>
+        <dl class="info">
+          <dt>練習日</dt><dd><input type="date" id="sessionDate" class="btn"></dd>
+          <dt>メモ</dt><dd><input type="text" id="sessionMemo" class="btn wide" placeholder="例：40spm、右3本で交代"></dd>
+        </dl>
+        <div class="row">
+          <button class="btn" id="saveSession">保存</button>
+          <label><input type="checkbox" id="saveVideo" checked> 動画も保存</label>
+          <button class="btn" id="newSession">新しいセッション</button>
+        </div>
+        <p id="sessionNote" class="muted"></p>
+        <div class="scroll">
+          <table class="table">
+            <thead><tr><th>練習日</th><th>メモ</th><th>内容</th><th></th></tr></thead>
+            <tbody id="sessionList"></tbody>
+          </table>
+        </div>
+        <p class="muted">選択中の選手のデータを、このPCのブラウザ内に保存します（外部には送信しません）。開いたデータを修正して「保存」すると上書きします。動画1本で約60〜70MB使います。<span id="storageUsage"></span></p>
+      </section>
+
+      <section class="panel">
         <h2>骨格推定</h2>
         <div class="row">
           <button class="btn" id="analyze">解析開始</button>

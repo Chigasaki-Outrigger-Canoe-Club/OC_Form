@@ -173,3 +173,4 @@ body {
 .info dt { color: var(--muted); }
 .info dd { margin: 0; font-variant-numeric: tabular-nums; }
 .info input { width: 6em; cursor: text; }
+.info input.wide, .info input[type="date"] { width: 100%; }

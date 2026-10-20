@@ -316,7 +316,8 @@ function startLoop() {
 function loopTick(now) {
   if (!loop.playing || !loopVisible()) { loop.running = false; return; }
   const sec = fused?.duration?.[loopSide()] ?? 1.3;
-  loop.phase = (loop.phase + (((now - loop.last) / 1000) / sec) * 100) % 101;
+  const speed = Number(el("loopSpeed").value); // 1・1/2・1/4倍速
+  loop.phase = (loop.phase + (((now - loop.last) / 1000) / sec) * 100 * speed) % 101;
   loop.last = now;
   updateDisplay();
   requestAnimationFrame(loopTick);
@@ -834,10 +835,11 @@ function update3d(d, frame) {
   let spine = null;
   let range = [];  // 軌跡を描く区間（ストロークの始まり〜今）
   let drive = [];  // その区間のうち力を入れているところ
+  let side = null; // 漕ぐ側（パドルの向きを固定するため）
 
   if (mode === "fused") {
     // 代表ストローク（平均）を、平均ストローク時間で繰り返し再生する
-    const side = loopSide();
+    side = loopSide();
     const rep = fused?.[side];
     const index = Math.min(100, Math.floor(loop.phase));
     body = rep?.frames[index] ?? null;
@@ -857,7 +859,8 @@ function update3d(d, frame) {
     if (body) spine = spinePoints(body, d.spine?.[frame] ?? null);
     const n = d ? strokeIndexAt(frame, d.strokes) : -1;
     if (body && n >= 0) {
-      const { frame: start, side } = d.strokes[n];
+      const start = d.strokes[n].frame;
+      side = d.strokes[n].side;
       range = d.body.slice(start, frame + 1);
       drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame), side)?.mask.slice(0, range.length) ?? [];
     }
@@ -869,9 +872,9 @@ function update3d(d, frame) {
     const paddleColor = getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim();
     trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null), drive });
     trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null), drive });
-    trails.push({ color: paddleColor, points: range.map((b) => estimatePaddle(b, size)?.tip ?? null), drive });
+    trails.push({ color: paddleColor, points: range.map((b) => estimatePaddle(b, size, side)?.tip ?? null), drive });
   }
-  updateView3d(body, estimatePaddle(body, size), trails, spine);
+  updateView3d(body, estimatePaddle(body, size, side), trails, spine);
   el("paddleNote").textContent = size.usedDefaults.length ? "パドル寸法の一部は標準値です（選手欄で入力できます）。" : "";
 }
 

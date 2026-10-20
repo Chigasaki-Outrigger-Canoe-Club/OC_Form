@@ -107,6 +107,11 @@
           <label><input type="radio" name="loopSide" value="right" checked> 右漕ぎ</label>
           <label><input type="radio" name="loopSide" value="left"> 左漕ぎ</label>
           <button class="btn" id="loopPlay">⏸ 停止</button>
+          <select id="loopSpeed" aria-label="再生速度">
+            <option value="1">1倍速</option>
+            <option value="0.5">1/2倍速</option>
+            <option value="0.25">1/4倍速</option>
+          </select>
           <input type="range" id="loopPhase" min="0" max="100" value="0" class="wide">
         </div>
         <canvas id="view3d" class="view3d"></canvas>

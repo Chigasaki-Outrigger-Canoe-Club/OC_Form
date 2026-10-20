@@ -83,3 +83,12 @@ test("ブレードの輪郭：幅と長さが寸法どおり、左右対称、�
   assert.ok(widest.y < -0.24);
   for (const p of pts) assert.ok(pts.some((q) => Math.abs(q.x + p.x) < 1e-9 && Math.abs(q.y - p.y) < 1e-9));
 });
+
+test("パドル：漕ぐ側を渡すと、上の手の高さが入れ替わっても左右が変わらない", () => {
+  const body = Array.from({ length: 33 }, () => ({ x: 0, y: 1, z: 0, v: 1 }));
+  body[P.lWrist] = { x: 0.2, y: 0.9, z: 0.4, v: 1 }; // 左手（漕ぐ側＝下の手）のほうが高い瞬間
+  body[P.rWrist] = { x: 0.1, y: 0.8, z: 0.3, v: 1 };
+  const size = { length: 1.2, bladeLength: 0.48, bladeWidth: 0.25 };
+  assert.equal(estimatePaddle(body, size, "left").side, "left");
+  assert.equal(estimatePaddle(body, size).side, "right"); // 漕ぐ側がわからないときは高さで決める（従来どおり）
+});

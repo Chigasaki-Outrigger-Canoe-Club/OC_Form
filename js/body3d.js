@@ -64,15 +64,17 @@ export function toBodyFrame(worldFrames) {
 // 簡易パドルの推定（推定値）
 // 仮定：上の手がTグリップ（パドルの上端）を持ち、シャフトは上の手から下の手の方向へ伸びる
 // size：{ length, bladeLength, bladeWidth }（m）
+// side：そのストロークの漕ぐ側（"left"/"right"）。漕ぐ側の手＝下の手に固定し、ストロークの途中で左右が入れ替わらないようにする
+//       わからないとき（null）だけ、高いほうの手を上の手とみなす
 // 戻り値：{ grip, bladeStart, tip, widthDir, bladeWidth, side } または null（手が見えない・両手が近すぎる）
-export function estimatePaddle(body, size) {
+export function estimatePaddle(body, size, side = null) {
   if (!body) return null;
   const l = body[P.lWrist];
   const r = body[P.rWrist];
   if (l.v < 0.5 || r.v < 0.5) return null;
 
-  const top = l.y >= r.y ? l : r;
-  const bottom = top === l ? r : l;
+  const bottom = side === "left" ? l : side === "right" ? r : l.y >= r.y ? r : l;
+  const top = bottom === l ? r : l;
   if (length(sub(bottom, top)) < 0.05) return null;
 
   const dir = normalize(sub(bottom, top));

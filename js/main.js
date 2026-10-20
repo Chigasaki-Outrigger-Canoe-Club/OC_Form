@@ -9,10 +9,10 @@ import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
-import { viewRepresentative, fuseViews, phaseAt } from "./fusion.js";
+import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
-import { detectDrive } from "./drive.js";
+import { detectDrive, refineToCatch, releaseFrame } from "./drive.js";
 import { buildFeedback } from "./feedback.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
@@ -35,7 +35,8 @@ const views = {};
 let currentView = "left";
 let analyzing = false;
 let stopRequested = false;
-let fused = null;      // 全方向の統合3Dモデル（推定値）
+let fused = null;      // 全方向の統合3Dモデル（漕ぐ側ごとの代表ストローク。推定値）
+let savedModel = null; // 過去データに保存してあった平均の3Dモデル（全フレームのデータがないときに使う）
 let sessionId = null;  // 表示中の過去データのID（新しいデータなら null）
 let sessionDate = null;
 
@@ -102,6 +103,7 @@ seek.addEventListener("input", () => goToFrame(Number(seek.value)));
 document.addEventListener("keydown", (e) => {
   if (["INPUT", "SELECT"].includes(e.target.tagName)) return;
   if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  if (e.code === "Enter" && editorOpen()) { e.preventDefault(); setCatch(); }
   if (e.code === "ArrowLeft") stepFrame(-1);
   if (e.code === "ArrowRight") stepFrame(1);
 });
@@ -204,6 +206,7 @@ document.querySelectorAll(".tab[data-view]").forEach((tab) => {
 
 function selectView(view) {
   currentView = view;
+  el("strokeEditor").hidden = true;
   virtual.playing = false;
   virtual.frame = 0;
   document.querySelectorAll(".tab[data-view]").forEach((tab) => {
@@ -297,6 +300,39 @@ function showDisplay(name) {
   updateDisplay();
 }
 
+// ---- 代表ストロークの繰り返し再生（動画とは別の時計で動く） ----
+const loop = { phase: 0, playing: true, running: false, last: 0 };
+const loopSide = () => document.querySelector("input[name=loopSide]:checked").value;
+const loopVisible = () => !el("modelBox").hidden && document.querySelector("input[name=mode3d]:checked").value === "fused";
+
+function startLoop() {
+  if (loop.running || !loop.playing || !loopVisible()) return;
+  loop.running = true;
+  loop.last = performance.now();
+  requestAnimationFrame(loopTick);
+}
+
+// 経過時間 ÷ 平均ストローク時間 だけ位相（0〜100%）を進める
+function loopTick(now) {
+  if (!loop.playing || !loopVisible()) { loop.running = false; return; }
+  const sec = fused?.duration?.[loopSide()] ?? 1.3;
+  loop.phase = (loop.phase + (((now - loop.last) / 1000) / sec) * 100) % 101;
+  loop.last = now;
+  updateDisplay();
+  requestAnimationFrame(loopTick);
+}
+
+el("loopPlay").addEventListener("click", () => {
+  loop.playing = !loop.playing;
+  updateDisplay();
+});
+el("loopPhase").addEventListener("input", (e) => {
+  loop.playing = false;
+  loop.phase = Number(e.target.value);
+  updateDisplay();
+});
+document.querySelectorAll("input[name=loopSide]").forEach((r) => r.addEventListener("change", updateDisplay));
+
 setupView3d(el("view3d"));
 document.querySelectorAll("[data-view3d]").forEach((b) => b.addEventListener("click", () => setFixedView(b.dataset.view3d)));
 document.querySelectorAll("input[name=mode3d]").forEach((r) => r.addEventListener("change", updateDisplay));
@@ -327,7 +363,7 @@ async function analyzeCurrent(label) {
   d.world = world;
   d.spine = spine;
   d.body = toBody(world);
-  d.strokes = detectStrokes(frames, fps());
+  d.strokes = refineToCatch(detectStrokes(frames, fps()), d.body); // 区切り＝キャッチ（推定）
   return true;
 }
 
@@ -384,14 +420,22 @@ el("runAll").addEventListener("click", async () => {
 // 解析結果・ストロークが変わったら呼ぶ
 function dataChanged() {
   const usable = Object.entries(views).filter(([v, d]) => d?.body && d.strokes.length > 1 && el(`fuse-${v}`).checked);
-  fused = usable.length ? fuseViews(Object.fromEntries(usable.map(([v, d]) => [v, viewRepresentative(d)]))) : null;
+  const info = Object.entries(views)
+    .filter(([v, d]) => d.strokes.length > 1 && el(`fuse-${v}`).checked)
+    .map(([name, d]) => ({ name, fps: d.fps, strokes: d.strokes }));
+  if (usable.length) {
+    fused = fuseViews(Object.fromEntries(usable.map(([v, d]) => [v, viewRepresentative(d)])));
+    fused.duration = sideDurations(info); // 繰り返し再生の速さ（平均ストローク時間）
+  } else {
+    fused = savedModel; // 全フレームのデータがない過去データは、保存してある平均モデルを使う
+  }
 
   const describe = (side) => {
     const f = fused?.[side];
     return `${SIDE_LABEL[side]}：` + (f ? Object.entries(f.strokes).map(([v, n]) => `${VIEW_LABELS[v]}${n}本`).join("・") : "データなし");
   };
   el("fusionInfo").textContent = fused ? `統合に使ったストローク… ${describe("right")}／${describe("left")}` : "";
-  renderFeedback(usable.map(([name, d]) => ({ name, fps: d.fps, strokes: d.strokes })));
+  renderFeedback(info);
   renderStrokes();
   updateDisplay();
 }
@@ -422,7 +466,7 @@ function renderFeedback(usedViews) {
 async function saveCurrentSession() {
   const a = athletes.currentAthlete(store);
   if (!a) { el("sessionNote").textContent = "選手が選ばれていないため保存できません"; return false; }
-  const session = sessions.buildSession({ id: sessionId, athlete: a, date: sessionDate ?? today(), memo: el("sessionMemo").value, views });
+  const session = sessions.buildSession({ id: sessionId, athlete: a, date: sessionDate ?? today(), memo: el("sessionMemo").value, views, model: fused });
   const videos = el("saveVideo").checked
     ? Object.fromEntries(Object.entries(views).filter(([, d]) => d.file).map(([v, d]) => [v, d.file]))
     : {};
@@ -452,11 +496,13 @@ const GITHUB_KEY = "oc-form-github";
 let ghSettings = { ...github.DEFAULT_SETTINGS };
 try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
 el("ghEnabled").checked = ghSettings.enabled;
+el("rawExport").checked = ghSettings.raw;
+el("rawExport").addEventListener("change", () => saveGhSettings());
 el("ghToken").value = ghSettings.token;
 el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
 
 function saveGhSettings() {
-  ghSettings = { ...ghSettings, enabled: el("ghEnabled").checked, token: el("ghToken").value.trim() };
+  ghSettings = { ...ghSettings, enabled: el("ghEnabled").checked, token: el("ghToken").value.trim(), raw: el("rawExport").checked };
   try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
 }
 
@@ -504,6 +550,7 @@ function clearViews() {
 function startNewData() {
   clearViews();
   sessionId = null;
+  savedModel = null;
   sessionDate = null;
   el("sessionMemo").value = "";
   showSessionLabel();
@@ -533,6 +580,7 @@ async function openSession(id) {
   }
   sessionId = id;
   sessionDate = s.date;
+  savedModel = s.model ?? null;
   el("sessionMemo").value = s.memo;
   showSessionLabel();
   selectView(Object.keys(views)[0] ?? "left");
@@ -583,7 +631,7 @@ function download(name, text, type) {
 el("exportSession").addEventListener("click", async () => {
   if (!sessionId) return alert("保存したデータを表示しているときに書き出せます（先に保存してください）");
   const s = await sessions.getSession(sessionId);
-  download(`${s.athleteName}_${s.date}_${s.id}.json`, JSON.stringify(sessions.buildSessionFile(s)), "application/json");
+  download(`${s.athleteName}_${s.date}_${s.id}.json`, JSON.stringify(sessions.buildSessionFile(s, { raw: el("rawExport").checked })), "application/json");
 });
 
 el("exportCSV").addEventListener("click", () => {
@@ -620,7 +668,8 @@ el("importSession").addEventListener("change", async (event) => {
 el("detect").addEventListener("click", () => {
   const d = data();
   if (!d?.pose) return alert("この方向はまだ解析していません");
-  d.strokes = detectStrokes(d.pose, d.fps);
+  if (d.strokes.some((s) => s.src === "manual") && !confirm("手で設定したキャッチもやり直されます。よろしいですか？")) return;
+  d.strokes = refineToCatch(detectStrokes(d.pose, d.fps), d.body);
   dataChanged();
 });
 
@@ -642,20 +691,21 @@ function renderStrokes() {
 
   strokes.forEach((s, n) => {
     const last = n === strokes.length - 1;
+    const release = releaseFrame(strokes, n, data().body);
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${last ? "終端" : n + 1}</td>
-      <td><button class="link">${formatTime(s.frame / fps())}</button></td>
+      <td><button class="link">${formatTime(s.frame / fps())}</button> ${s.src === "manual" ? '<span class="muted">手で設定</span>' : ""}</td>
+      <td>${release == null ? "--" : formatTime(release / fps())}</td>
       <td>${last ? "" : `<select class="btn small">
         <option value="">不明</option>
         <option value="left" ${s.side === "left" ? "selected" : ""}>左</option>
         <option value="right" ${s.side === "right" ? "selected" : ""}>右</option>
-      </select>`} ${s.src === "manual" ? '<span class="muted">修正</span>' : ""}</td>
+      </select>`}</td>
       <td><button class="btn small">削除</button></td>`;
     row.querySelector(".link").addEventListener("click", () => { video.pause(); virtual.playing = false; goToFrame(s.frame); });
     row.querySelector("select")?.addEventListener("change", (e) => {
       s.side = e.target.value || null;
-      s.src = "manual";
       dataChanged();
     });
     row.querySelector("td:last-child button").addEventListener("click", () => {
@@ -664,6 +714,64 @@ function renderStrokes() {
     });
     body.appendChild(row);
   });
+  renderEditor();
+}
+
+// ================= ストロークの区切りの編集（キャッチを手で設定） =================
+let editIndex = 0;
+const editorOpen = () => !el("strokeEditor").hidden;
+
+el("editStrokes").addEventListener("click", () => {
+  if (!data()?.strokes?.length) return alert("この方向にはストロークがありません（先に解析してください）");
+  if (!hasVideo()) return alert("動画を表示できるときに編集できます");
+  showDisplay("video");
+  el("strokeEditor").hidden = false;
+  el("strokeEditor").scrollIntoView({ block: "center", behavior: "smooth" });
+  openEdit(0);
+});
+
+el("editClose").addEventListener("click", () => (el("strokeEditor").hidden = true));
+el("editPrev").addEventListener("click", () => openEdit(editIndex - 1));
+el("editNext").addEventListener("click", () => openEdit(editIndex + 1));
+el("editNo").addEventListener("change", (e) => openEdit(Number(e.target.value)));
+el("editCatch").addEventListener("click", setCatch);
+
+// No.n を開き、その開始位置へ動画を動かす
+function openEdit(n) {
+  const strokes = data().strokes;
+  editIndex = Math.min(Math.max(n, 0), strokes.length - 1);
+  video.pause();
+  goToFrame(strokes[editIndex].frame);
+  renderEditor();
+}
+
+// 今の位置を No.n のキャッチ（開始）にして、次の No へ進む
+function setCatch() {
+  const strokes = data().strokes;
+  const frame = currentFrame();
+  const prev = strokes[editIndex - 1];
+  const next = strokes[editIndex + 1];
+  if ((prev && frame <= prev.frame) || (next && frame >= next.frame)) {
+    el("editInfo").textContent = `前後のストロークの開始（No.${editIndex}〜No.${editIndex + 2}）の間に置いてください。`;
+    return;
+  }
+  strokes[editIndex] = { ...strokes[editIndex], frame, src: "manual" };
+  dataChanged();
+  if (editIndex < strokes.length - 1) openEdit(editIndex + 1);
+  else el("editInfo").textContent = "最後まで設定しました。ストローク欄の「修正を保存」で保存してください。";
+}
+
+function renderEditor() {
+  if (!editorOpen() || !data()) return;
+  const strokes = data().strokes;
+  const select = el("editNo");
+  select.innerHTML = "";
+  strokes.forEach((_, n) => select.add(new Option(n === strokes.length - 1 ? `終端` : `${n + 1}`, n, false, n === editIndex)));
+  el("editView").textContent = VIEW_LABELS[currentView];
+  const s = strokes[editIndex];
+  const release = releaseFrame(strokes, editIndex, data().body);
+  el("editInfo").textContent = `No.${editIndex + 1} / ${strokes.length - 1}：今の開始 ${formatTime(s.frame / fps())}（${s.src === "manual" ? "手で設定" : "自動推定"}）`
+    + `、力が抜けた位置（推定）${release == null ? "--" : formatTime(release / fps())}、${SIDE_LABEL[s.side] ?? "漕ぐ側不明"}`;
 }
 
 // ================= 関節のドラッグ修正（停止中のみ） =================
@@ -696,19 +804,22 @@ function update3d(d, frame) {
   let drive = [];  // その区間のうち力を入れているところ
 
   if (mode === "fused") {
-    // 統合モデル：再生位置がストロークの何%かを求め、代表ストロークのその位相を表示
-    const ph = d ? phaseAt(frame, d.strokes) : null;
-    const rep = ph && fused?.[ph.side];
-    body = rep?.frames[ph.index] ?? null;
+    // 代表ストローク（平均）を、平均ストローク時間で繰り返し再生する
+    const side = loopSide();
+    const rep = fused?.[side];
+    const index = Math.min(100, Math.floor(loop.phase));
+    body = rep?.frames[index] ?? null;
     if (body) {
-      spine = spinePoints(body, rep.spine?.[ph.index] ?? null);
-      range = rep.frames.slice(0, ph.index + 1);
-      drive = detectDrive(rep.frames, ph.side)?.mask.slice(0, ph.index + 1) ?? [];
+      spine = spinePoints(body, rep.spine?.[index] ?? null);
+      range = rep.frames.slice(0, index + 1);
+      drive = detectDrive(rep.frames, side)?.mask.slice(0, index + 1) ?? [];
     }
+    const sec = fused?.duration?.[side];
+    el("loopPhase").value = index;
+    el("loopPlay").textContent = loop.playing ? "⏸ 停止" : "▶ 再生";
     el("mode3dInfo").textContent = !fused ? "統合モデルはまだありません（解析すると作られます）"
-      : !ph ? "ストロークの区間外です（再生すると表示されます）"
-      : !rep ? `この${SIDE_LABEL[ph.side] ?? "（漕ぐ側が不明な）ストローク"}の統合データがありません`
-      : `統合モデル：${SIDE_LABEL[ph.side]} ${ph.index}%（${rep.views.map((v) => VIEW_LABELS[v]).join("・")}の代表ストローク）`;
+      : !rep ? `${SIDE_LABEL[side]}のデータがありません`
+      : `代表ストローク：${SIDE_LABEL[side]} ${index}%（${rep.views.map((v) => VIEW_LABELS[v]).join("・")}の動画の平均${sec ? `、1ストローク ${sec.toFixed(2)}秒` : ""}）。0%＝キャッチ`;
   } else {
     body = d?.body?.[frame] ?? null;
     if (body) spine = spinePoints(body, d.spine?.[frame] ?? null);
@@ -716,7 +827,7 @@ function update3d(d, frame) {
     if (body && n >= 0) {
       const { frame: start, side } = d.strokes[n];
       range = d.body.slice(start, frame + 1);
-      drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame + 1), side)?.mask.slice(0, range.length) ?? [];
+      drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame), side)?.mask.slice(0, range.length) ?? [];
     }
     el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）だけの推定` : "";
   }
@@ -739,7 +850,11 @@ function updateDisplay() {
   seek.value = frame;
   el("play").textContent = isPlaying() ? "⏸ 停止" : "▶ 再生";
   drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null);
+  // 代表ストロークの再生中は動画の操作を隠す（動画とは別に動くため）
+  el("videoControls").hidden = loopVisible();
+  el("loopControls").hidden = !loopVisible();
   if (!el("modelBox").hidden) update3d(d, frame);
+  startLoop();
 }
 
 renderAthletes();

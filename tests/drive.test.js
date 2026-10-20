@@ -33,3 +33,26 @@ test("後ろへ動かないときや欠けが多いときは null", () => {
   assert.equal(detectDrive(still, "right"), null);
   assert.equal(detectDrive(Array(20).fill(null), "left"), null);
 });
+
+test("区切りをキャッチ（ドライブの始まり）に合わせる。手で設定した区切りは動かさない", async () => {
+  const { refineToCatch, releaseFrame } = await import("../js/drive.js");
+  const body = [...stroke(), ...stroke()]; // 100フレームのストロークが2回（ドライブは40〜79）
+  const strokes = [{ frame: 0, side: "right", src: "auto" }, { frame: 100, side: "right", src: "manual" }, { frame: 199, side: null, src: "auto" }];
+  const out = refineToCatch(strokes, body);
+  assert.ok(Math.abs(out[0].frame - 40) <= 2, `${out[0].frame}`);
+  assert.equal(out[1].frame, 100);
+  assert.equal(strokes[0].frame, 0, "元の配列は変えない");
+  const release = releaseFrame(out, 0, body);
+  assert.ok(Math.abs(release - 79) <= 2, `${release}`);
+  assert.equal(refineToCatch(strokes, null), strokes);
+});
+
+test("最後のストロークが短すぎるときは終端にする", async () => {
+  const { refineToCatch } = await import("../js/drive.js");
+  const body = [...stroke(), ...stroke(), ...stroke(), ...stroke().slice(0, 60)];
+  const strokes = [0, 100, 200, 300, 359].map((frame, n) => ({ frame, side: n < 4 ? "right" : null, src: "auto" }));
+  const out = refineToCatch(strokes, body);
+  // 4本目は 340 → 359 の短い区間しか残らないので、終端になる
+  assert.equal(out.length, 4);
+  assert.equal(out.at(-1).side, null);
+});

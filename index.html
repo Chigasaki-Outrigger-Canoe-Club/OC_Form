@@ -66,7 +66,8 @@
       <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから押してください。読み込んだ全方向を解析し、3Dモデルと改善点を作り、保存します（40秒の動画1本で数分かかります）。</p>
       <details class="sub">
         <summary>保存の設定</summary>
-        <label><input type="checkbox" id="saveVideo" checked> 動画も保存する（このブラウザ内。1本で約60〜70MB）</label>
+        <label><input type="checkbox" id="saveVideo" checked> 動画も保存する（このブラウザ内。1本で約60〜70MB）</label><br>
+        <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデルとストロークの区切りだけ）</label>
         <p class="muted">GitHubにも自動保存：保存先 <span id="ghRepo"></span>。解析結果（JSON）だけを送り、動画は送りません。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
           <label><input type="checkbox" id="ghEnabled"> 保存のたびにGitHubへ送る</label>
@@ -101,6 +102,13 @@
           <button class="btn small" data-view3d="top">上</button>
           <label><input type="checkbox" id="showTrails" checked> 軌跡</label>
         </div>
+        <div class="row" id="loopControls">
+          <span class="muted">代表ストローク：</span>
+          <label><input type="radio" name="loopSide" value="right" checked> 右漕ぎ</label>
+          <label><input type="radio" name="loopSide" value="left"> 左漕ぎ</label>
+          <button class="btn" id="loopPlay">⏸ 停止</button>
+          <input type="range" id="loopPhase" min="0" max="100" value="0" class="wide">
+        </div>
         <canvas id="view3d" class="view3d"></canvas>
         <p id="mode3dInfo" class="muted"></p>
         <details class="sub">
@@ -119,6 +127,7 @@
         </details>
       </div>
 
+      <div id="videoControls">
       <input type="range" id="seek" min="0" max="0" value="0">
       <div class="row">
         <button class="btn" id="prev">◀ 1コマ</button>
@@ -131,6 +140,21 @@
           <option value="2">2倍</option>
         </select>
         <span class="muted">スペース＝再生/停止、← →＝コマ送り。停止中に関節をドラッグすると修正できます（赤い点＝修正済み）</span>
+      </div>
+      </div>
+
+      <!-- ストロークの区切りの編集（ストローク欄の「編集する」で表示） -->
+      <div id="strokeEditor" class="sub editor" hidden>
+        <div class="row">
+          <strong>ストローク編集（<span id="editView"></span>）</strong>
+          <label>No. <select id="editNo" class="btn"></select></label>
+          <button class="btn" id="editPrev">◀ 前のNo</button>
+          <button class="btn" id="editNext">次のNo ▶</button>
+          <button class="btn primary" id="editCatch">キャッチ（ここを開始にする）</button>
+          <button class="btn" id="editClose">編集を終わる</button>
+        </div>
+        <p id="editInfo" class="muted"></p>
+        <p class="muted">動画を再生・コマ送りして、力を入れ始める瞬間（キャッチ）で「キャッチ」を押すと、そのストロークの開始になり、次のNoへ進みます（Enterキーでも可）。力が抜けた位置は自動で推定します。終わったらストローク欄の「修正を保存」を押してください。</p>
       </div>
     </section>
 
@@ -171,14 +195,15 @@
     <section class="panel">
       <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
       <div class="row">
+        <button class="btn primary" id="editStrokes">編集する</button>
         <button class="btn" id="detect">自動検出をやり直す</button>
         <button class="btn" id="addStroke">現在位置に区切りを追加</button>
         <button class="btn" id="saveSession">修正を保存</button>
       </div>
-      <p class="muted">表示中の方向のストロークです。区切り＝手が最も高い時点（自動検出の推定値）。パドルチェンジの前後は漕ぐ側を確認して修正してください。</p>
+      <p class="muted">表示中の方向のストロークです。開始＝キャッチ（自動推定。「編集する」で動画を見ながら設定できます）。パドルチェンジの前後は漕ぐ側も確認してください。</p>
       <div class="scroll">
         <table class="table">
-          <thead><tr><th>No.</th><th>開始</th><th>漕ぐ側</th><th></th></tr></thead>
+          <thead><tr><th>No.</th><th>キャッチ（開始）</th><th>力が抜けた位置（推定）</th><th>漕ぐ側</th><th></th></tr></thead>
           <tbody id="strokeList"></tbody>
         </table>
       </div>

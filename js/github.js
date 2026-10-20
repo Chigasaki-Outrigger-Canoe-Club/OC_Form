@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   branch: "data",
   token: "",
   enabled: false,
+  raw: false, // true なら全フレームのデータも送る（既定は平均の3Dモデルとストロークだけ）
 };
 
 // ---------- 計算・変換（テスト可能） ----------
@@ -87,7 +88,7 @@ export async function uploadSession(settings, session, fetchFn) {
     method: "PUT",
     body: JSON.stringify({
       message: `解析結果を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${session.memo ?? ""}`.trim(),
-      content: toBase64(JSON.stringify(buildSessionFile(session))),
+      content: toBase64(JSON.stringify(buildSessionFile(session, { raw: settings.raw }))),
       branch: settings.branch,
       ...(existing?.sha ? { sha: existing.sha } : {}),
     }),

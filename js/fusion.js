@@ -167,3 +167,17 @@ export function phaseAt(frame, strokes) {
   }
   return null;
 }
+
+// 漕ぐ側ごとの1ストロークの平均時間（秒）。3Dの代表ストロークを繰り返し再生する速さに使う
+// views：[{ fps, strokes }]
+export function sideDurations(views) {
+  const secs = { right: [], left: [] };
+  for (const v of views) {
+    v.strokes.forEach((s, n) => {
+      const next = v.strokes[n + 1];
+      if (next && secs[s.side]) secs[s.side].push((next.frame - s.frame) / v.fps);
+    });
+  }
+  const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
+  return { right: avg(secs.right), left: avg(secs.left) };
+}

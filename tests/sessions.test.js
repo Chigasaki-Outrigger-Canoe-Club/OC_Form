@@ -40,9 +40,19 @@ test("一覧の並び順（新しい練習日が先）", () => {
 
 test("ファイル：書き出し→読み込みで元に戻る、形式が違えばエラー", () => {
   const s = buildSession({ athlete, date: "2026-10-20", memo: "m", views: { left: view([[1]]) } });
-  const file = buildSessionFile(s);
+  const file = buildSessionFile(s, { raw: true });
   assert.equal(file.format, "oc-form-session");
   assert.deepEqual(parseSessionFile(JSON.stringify(file)), JSON.parse(JSON.stringify(s)));
   assert.throws(() => parseSessionFile('{"format":"oc-form-analysis"}'), /このシステム/);
   assert.throws(() => parseSessionFile("not json"));
+});
+
+test("ファイル：既定では平均モデルとストロークだけ（全フレームのデータは省く）", () => {
+  const model = { right: { frames: [[1]] }, left: null };
+  const s = buildSession({ athlete, date: "2026-10-20", memo: "m", views: { left: view([[1]]) }, model });
+  const small = buildSessionFile(s);
+  assert.deepEqual(small.model, model);
+  assert.deepEqual(Object.keys(small.views.left), ["video", "strokes"]);
+  const full = buildSessionFile(s, { raw: true });
+  assert.deepEqual(full.views.left.pose, [[1]]);
 });

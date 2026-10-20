@@ -103,3 +103,13 @@ test("背中の膨らみ：横からの動画だけを使って位相ごとに�
   // 横からの動画がなければ null
   assert.equal(fuseViews({ back: viewRepresentative(back) }).right.spine, null);
 });
+
+test("漕ぐ側ごとの平均ストローク時間", async () => {
+  const { sideDurations } = await import("../js/fusion.js");
+  const d = sideDurations([
+    { fps: 30, strokes: [{ frame: 0, side: "right" }, { frame: 30, side: "right" }, { frame: 66, side: "left" }, { frame: 99, side: null }] },
+    { fps: 25, strokes: [{ frame: 0, side: "left" }, { frame: 30, side: null }] },
+  ]);
+  near(d.right, (1 + 1.2) / 2); near(d.left, (1.1 + 1.2) / 2);
+  assert.deepEqual(sideDurations([]), { right: null, left: null });
+});

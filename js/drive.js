@@ -41,3 +41,38 @@ export function detectDrive(frames, side) {
   const mask = frames.map((_, i) => i >= best.start && i <= best.end);
   return { mask, start: best.start, end: best.end, ratio: (best.end - best.start + 1) / frames.length };
 }
+
+// ストロークの区切りを「キャッチ（力を入れ始める位置）」に合わせる
+// 自動検出の区切りは「手が最も高い時点」なので、各ストロークの中でドライブが始まる位置へ移す。
+// 手で設定した区切り（src: "manual"）はそのまま。body がなければ何もしない。
+export function refineToCatch(strokes, body) {
+  if (!body) return strokes;
+  const out = strokes.map((s) => ({ ...s }));
+  out.forEach((s, n) => {
+    const next = out[n + 1];
+    if (!next || s.src === "manual" || !s.side) return;
+    const drive = detectDrive(body.slice(s.frame, next.frame), s.side);
+    if (drive) s.frame += drive.start;
+  });
+  return dropShortLast(out);
+}
+
+// 最後のストロークが短すぎる（途中で動画が終わった）ときは、平均に混ぜないよう終端にする
+// 目安：ほかのストロークの中央値の 80% 未満
+function dropShortLast(strokes) {
+  if (strokes.length < 4) return strokes;
+  const lengths = strokes.slice(0, -2).map((s, n) => strokes[n + 1].frame - s.frame).sort((a, b) => a - b);
+  const median = lengths[Math.floor(lengths.length / 2)];
+  const n = strokes.length - 2;
+  if (strokes[n + 1].frame - strokes[n].frame >= median * 0.8) return strokes;
+  return [...strokes.slice(0, n), { ...strokes[n], side: null }];
+}
+
+// 力が抜けた位置（推定）：キャッチから次のキャッチまでのドライブの終わりのフレーム
+export function releaseFrame(strokes, n, body) {
+  const s = strokes[n];
+  const next = strokes[n + 1];
+  if (!body || !next || !s.side) return null;
+  const drive = detectDrive(body.slice(s.frame, next.frame), s.side);
+  return drive ? s.frame + drive.end : null;
+}

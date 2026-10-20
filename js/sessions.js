@@ -20,7 +20,8 @@ export function viewToRecord(d) {
 }
 
 // 画面の全方向 → セッションの記録
-export function buildSession({ id, athlete, date, memo, views, now = new Date() }) {
+// model：全方向を合わせた代表ストローク（漕ぐ側ごとの平均。3Dで繰り返し再生する）
+export function buildSession({ id, athlete, date, memo, views, model = null, now = new Date() }) {
   const recorded = Object.fromEntries(Object.entries(views).filter(([, d]) => d).map(([view, d]) => [view, viewToRecord(d)]));
   return {
     id: id ?? `s${now.getTime().toString(36)}`,
@@ -30,6 +31,7 @@ export function buildSession({ id, athlete, date, memo, views, now = new Date() 
     date,
     memo,
     savedAt: now.toISOString(),
+    model,
     views: recorded,
   };
 }
@@ -41,17 +43,21 @@ export const sortSessions = (list) => [...list].sort((a, b) =>
 // ---------- ファイル（書き出し・読み込み・GitHub保存）の形式 ----------
 
 // 書き出す中身（セッションの記録に形式名と説明を付ける）。動画は含まない
-export function buildSessionFile(session) {
+// raw が false なら、全フレームのデータ（pose・world・spine）を省き、平均の3Dモデルとストロークだけにする
+export function buildSessionFile(session, { raw = false } = {}) {
+  const views = raw ? session.views : Object.fromEntries(Object.entries(session.views).map(([v, r]) => [v, { video: r.video, strokes: r.strokes }]));
   return {
     format: "oc-form-session",
     version: 1,
     notes: {
-      contents: "解析結果のみ（動画は含まない）",
+      contents: raw ? "解析結果（全フレーム）と平均の3Dモデル。動画は含まない" : "平均の3Dモデル（model）とストロークの区切りのみ。全フレームのデータと動画は含まない",
+      model: "漕ぐ側ごとの代表ストローク（0〜100%の101点）。選手基準の3D座標（X左・Y上・Z前、単位およそm）。spine＝背中の膨らみ、duration＝平均ストローク時間（秒）",
       pose: "画像上のピクセル座標（左上が原点、yは下向き）。v＝MediaPipeの信頼度（0〜1）。src：est＝推定値、manual＝手動修正",
       world: "MediaPipeの3D推定座標（腰の中心が原点、単位およそm、x右・y下・z奥）。1台のカメラからの推定値",
-      strokes: "区切り＝手が最も高い時点。side＝その区切りから次の区切りまでの漕ぐ側",
+      strokes: "区切り＝キャッチ（力を入れ始める位置。自動推定または手動設定）。side＝そのストロークの漕ぐ側",
     },
     ...session,
+    views,
   };
 }
 

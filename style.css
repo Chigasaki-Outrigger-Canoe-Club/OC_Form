@@ -175,3 +175,5 @@ body {
 
 .table tbody tr.clickable { cursor: pointer; }
 .table tbody tr.clickable:hover, .table tbody tr.current { background: var(--bg); }
+
+.editor { border-color: var(--accent); }

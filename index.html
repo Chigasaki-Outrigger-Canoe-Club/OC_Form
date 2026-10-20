@@ -185,10 +185,12 @@
           ファイルから読み込む
           <input type="file" id="importSession" accept=".json,application/json" hidden>
         </label>
+        <button class="btn" id="ghList">GitHubのデータを見る</button>
         <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
         <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
       </div>
-      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。<span id="storageUsage"></span></p>
+      <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
+      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。GitHubのデータはトークンなしで読めます（スマホ可）。<span id="storageUsage"></span></p>
     </section>
 
     <!-- 5. ストローク（まとめて実行で自動検出。必要なときだけ修正） -->

@@ -645,9 +645,39 @@ el("exportCSV").addEventListener("click", () => {
 el("importSession").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   event.target.value = "";
-  if (!file) return;
+  if (file) importSessionText(await file.text());
+});
+
+// GitHubの保存データの一覧を出す。行を押すと読み込んで表示する
+el("ghList").addEventListener("click", async () => {
+  const body = el("ghSessionList");
+  body.innerHTML = "<tr><td>読み込み中…</td></tr>";
   try {
-    const s = sessions.parseSessionFile(await file.text());
+    const list = await github.listSavedSessions(ghSettings);
+    body.innerHTML = list.length ? "" : "<tr><td>GitHubに保存されたデータはありません</td></tr>";
+    for (const item of list) {
+      const row = document.createElement("tr");
+      row.className = "clickable";
+      row.innerHTML = "<td></td><td></td>";
+      row.children[0].textContent = item.athlete;
+      row.children[1].textContent = item.name;
+      row.addEventListener("click", async () => {
+        el("sessionNote").textContent = "GitHubから読み込み中…";
+        const res = await fetch(github.rawUrl(ghSettings, item.path));
+        if (!res.ok) return alert(`読み込めませんでした（${res.status}）`);
+        importSessionText(await res.text());
+      });
+      body.appendChild(row);
+    }
+  } catch (err) {
+    body.innerHTML = "";
+    el("sessionNote").textContent = `GitHubの一覧を読めません：${err.message}`;
+  }
+});
+
+async function importSessionText(text) {
+  try {
+    const s = sessions.parseSessionFile(text);
     // 選手：同じIDか同じ名前の選手に入れる。いなければ追加する
     let a = store.list.find((x) => x.id === s.athleteId) ?? store.list.find((x) => x.name === s.athleteName);
     if (!a) {
@@ -662,7 +692,7 @@ el("importSession").addEventListener("change", async (event) => {
   } catch (err) {
     alert(`読み込めませんでした：${err.message}`);
   }
-});
+}
 
 // ================= ストローク（必要なときだけ手で直す） =================
 el("detect").addEventListener("click", () => {

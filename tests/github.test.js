@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sessionPath, toBase64, testConnection, uploadSession, DEFAULT_SETTINGS } from "../js/github.js";
+import { sessionPath, toBase64, testConnection, uploadSession, listSavedSessions, rawUrl, DEFAULT_SETTINGS } from "../js/github.js";
 
 const settings = { ...DEFAULT_SETTINGS, token: "t" };
 const session = { id: "s1", athleteName: "Manato", date: "2026-10-20", memo: "40spm", views: {} };
@@ -70,4 +70,24 @@ test("保存：同じファイルがあれば sha を付けて上書き", async 
 test("保存：GitHubのエラーはメッセージ付きで伝える", async () => {
   const m = mockFetch({ "GET /branches/data": new Error("Bad credentials") });
   await assert.rejects(uploadSession(settings, session, m.fn), /403：Bad credentials/);
+});
+
+test("一覧：data/選手名/ファイル.json だけを新しい順に（トークン不要）", async () => {
+  const tree = [
+    { type: "blob", path: "index.html" },
+    { type: "tree", path: "data/Manato" },
+    { type: "blob", path: "data/Manato/2026-10-01_a.json" },
+    { type: "blob", path: "data/Manato/2026-10-20_b.json" },
+    { type: "blob", path: "data/x/y/z.json" },
+  ];
+  const fn = async (url) => {
+    assert.match(url, /\/git\/trees\/data\?recursive=1$/);
+    return { ok: true, status: 200, json: async () => ({ tree }) };
+  };
+  const list = await listSavedSessions(DEFAULT_SETTINGS, fn);
+  assert.deepEqual(list.map((x) => x.name), ["2026-10-20_b", "2026-10-01_a"]);
+  assert.equal(list[0].athlete, "Manato");
+  assert.deepEqual(await listSavedSessions(DEFAULT_SETTINGS, async () => ({ ok: false, status: 404 })), []);
+  assert.equal(rawUrl(DEFAULT_SETTINGS, "data/まなと/a.json"),
+    "https://raw.githubusercontent.com/chigasaki-outrigger-canoe-club/OC_Form/data/data/%E3%81%BE%E3%81%AA%E3%81%A8/a.json");
 });

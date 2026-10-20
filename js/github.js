@@ -77,6 +77,26 @@ async function ensureBranch(api, settings) {
   await api("/git/refs", { method: "POST", body: JSON.stringify({ ref: `refs/heads/${settings.branch}`, sha: ref.object.sha }) });
 }
 
+// 保存済みデータの一覧（公開リポジトリならトークン不要）。新しい順
+// 戻り値：[{ path, athlete, name }]（保存用ブランチがなければ空）
+export async function listSavedSessions(settings, fetchFn = fetch) {
+  const res = await fetchFn(`https://api.github.com/repos/${settings.owner}/${settings.repo}/git/trees/${settings.branch}?recursive=1`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`GitHub ${res.status}`);
+  const { tree } = await res.json();
+  return tree
+    .filter((t) => t.type === "blob" && /^data\/[^/]+\/[^/]+\.json$/.test(t.path))
+    .map((t) => {
+      const [, athlete, file] = t.path.split("/");
+      return { path: t.path, athlete, name: file.replace(/\.json$/, "") };
+    })
+    .sort((a, b) => b.name.localeCompare(a.name));
+}
+
+// 保存データのファイルを直接読むURL
+export const rawUrl = (settings, path) =>
+  `https://raw.githubusercontent.com/${settings.owner}/${settings.repo}/${settings.branch}/${path.split("/").map(encodeURIComponent).join("/")}`;
+
 // セッションを保存（同じファイルがあれば上書き）。戻り値：GitHub上のURL
 export async function uploadSession(settings, session, fetchFn) {
   const api = client(settings, fetchFn);

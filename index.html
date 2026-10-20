@@ -51,6 +51,16 @@
       <section class="panel">
         <h2>3D骨格（推定）</h2>
         <div class="row">
+          <label><input type="radio" name="mode3d" value="fused" checked> 全方向の統合モデル</label>
+          <label><input type="radio" name="mode3d" value="single"> この動画だけ</label>
+          <span class="muted">統合に使う方向：</span>
+          <label><input type="checkbox" id="fuse-front" checked> 前</label>
+          <label><input type="checkbox" id="fuse-left" checked> 左</label>
+          <label><input type="checkbox" id="fuse-right" checked> 右</label>
+          <label><input type="checkbox" id="fuse-back" checked> 後ろ</label>
+        </div>
+        <p id="mode3dInfo" class="muted"></p>
+        <div class="row">
           <button class="btn" data-view3d="front">正面</button>
           <button class="btn" data-view3d="left">左側面</button>
           <button class="btn" data-view3d="right">右側面</button>
@@ -60,7 +70,18 @@
         </div>
         <canvas id="view3d" class="view3d"></canvas>
         <p class="muted">ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
-        <p class="muted">1台のカメラから推定した3D骨格（MediaPipe）です。奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
+        <p id="fusionInfo" class="muted"></p>
+        <p class="muted">統合モデル：各動画のストロークを0〜100%にそろえて漕ぐ側ごとに平均し、方向ごとに「カメラから見やすい軸」を重く使って合わせた推定です（3本は同時撮影ではないため、特定の1ストロークの再現ではありません）。表示中の動画の位相に合わせて動きます。おかしい方向があれば、チェックを外して除けます。</p>
+        <p class="muted">「この動画だけ」：1台のカメラから推定した3D骨格（MediaPipe）です。奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
+      </section>
+
+      <section class="panel">
+        <h2>フォームのコメント（改善候補）</h2>
+        <table class="table">
+          <thead><tr><th>項目</th><th>値</th><th>コメント</th></tr></thead>
+          <tbody id="feedbackList"></tbody>
+        </table>
+        <p class="muted">統合3Dモデル（推定）から計算しています。目安は一般的な指導ポイントをもとにした暫定値で、科学的に検証したものではありません。気になる項目は動画で確認してください。今後、本人の基準フォームとの比較に置き換える予定です。</p>
       </section>
 
       <section class="panel">
@@ -138,7 +159,8 @@
       <section class="panel">
         <h2>骨格推定</h2>
         <div class="row">
-          <button class="btn" id="analyze">解析開始</button>
+          <button class="btn" id="analyzeAll">全方向を解析</button>
+          <button class="btn" id="analyze">この動画を解析</button>
           <button class="btn" id="stop" disabled>中止</button>
           <label><input type="checkbox" id="showSkeleton" checked> 骨格を表示</label>
         </div>

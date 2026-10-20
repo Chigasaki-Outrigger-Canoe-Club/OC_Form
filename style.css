@@ -162,6 +162,7 @@ body {
 #seek { width: 100%; margin-bottom: var(--gap); }
 
 .muted { color: var(--muted); font-size: 0.85rem; }
+.flag { color: var(--danger); font-weight: bold; }
 
 .info {
   display: grid;

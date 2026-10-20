@@ -36,9 +36,8 @@ function rotateY(p, angle) {
 // 向き：全フレームの「右の腰・肩 → 左の腰・肩」方向の中央値を X に合わせる（動画ごとに1つの回転）
 //   フレームごとに回さないので、体幹の回旋はそのまま残る
 // 床：足首・かかと・つま先の最も低い点の中央値を Y=0 とする
-export function toBodyFrame(worldFrames) {
-  const flipped = worldFrames.map((f) => (f ? f.map(flip) : null));
-
+// 選手の左をXに合わせるための回転角
+function bodyAngle(flipped) {
   const leftX = [];
   const leftZ = [];
   for (const f of flipped) {
@@ -47,7 +46,12 @@ export function toBodyFrame(worldFrames) {
     leftX.push(left.x);
     leftZ.push(left.z);
   }
-  const angle = Math.atan2(median(leftZ), median(leftX));
+  return Math.atan2(median(leftZ), median(leftX));
+}
+
+export function toBodyFrame(worldFrames) {
+  const flipped = worldFrames.map((f) => (f ? f.map(flip) : null));
+  const angle = bodyAngle(flipped);
 
   const rotated = flipped.map((f) => (f ? f.map((p) => rotateY(p, angle)) : null));
   const floor = median(rotated.map((f) => (f
@@ -111,4 +115,13 @@ export function project(p, cam, width, height, focal) {
   return { x: width / 2 + (focal * x) / depth, y: height / 2 - (focal * y) / depth, depth };
 }
 
-export { add, scale };
+// 選手から見たカメラの方向（選手基準の座標、長さ1）
+// 例：左側から撮った動画 → (1, 0, 0)、後ろから → (0, 0, -1)
+// この方向がカメラの奥行き方向で、1台のカメラでは最も精度が低い
+export function cameraDirection(worldFrames) {
+  const angle = bodyAngle(worldFrames.map((f) => (f ? f.map(flip) : null)));
+  const dir = rotateY({ x: 0, y: 0, z: 1, v: 1 }, angle);
+  return { x: dir.x, y: 0, z: dir.z };
+}
+
+export { add, scale, median };

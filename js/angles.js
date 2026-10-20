@@ -4,6 +4,7 @@
 
 // MediaPipe Pose の関節番号
 export const P = {
+  nose: 0, lEar: 7, rEar: 8,
   lShoulder: 11, rShoulder: 12, lElbow: 13, rElbow: 14, lWrist: 15, rWrist: 16,
   lHip: 23, rHip: 24, lKnee: 25, rKnee: 26, lAnkle: 27, rAnkle: 28,
 };

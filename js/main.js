@@ -12,6 +12,8 @@ import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
 import { COLOR } from "./overlay.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
+import { viewRepresentative, fuseViews, phaseAt } from "./fusion.js";
+import { buildFeedback } from "./feedback.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -321,6 +323,7 @@ el("newSession").addEventListener("click", () => {
   el("sessionMemo").value = "";
   setSessionLabel("新規（未保存）");
   selectView("left");
+  dataChanged();
 });
 
 function clearViews() {
@@ -354,6 +357,7 @@ async function openSession(id) {
   el("sessionMemo").value = s.memo;
   setSessionLabel(`保存済み：${s.date} ${s.memo}`);
   selectView(Object.keys(views)[0] ?? "left");
+  dataChanged();
 }
 
 async function renderSessions() {
@@ -388,10 +392,12 @@ async function renderSessions() {
 }
 
 // ================= 骨格推定 =================
-el("analyze").addEventListener("click", async () => {
-  if (!loaded() || analyzing) return;
+// 今の方向の動画を解析する。成功したら true
+async function analyzeCurrent() {
+  if (!loaded() || analyzing) return false;
   const d = data();
-  if (!video.videoWidth) return showStatus(playbackProblem());
+  if (!video.videoWidth) { showStatus(playbackProblem()); return false; }
+  let ok = false;
   analyzing = true;
   stopRequested = false;
   setAnalyzing(true);
@@ -411,21 +417,46 @@ el("analyze").addEventListener("click", async () => {
       d.body = toBodyFrame(world);
       d.strokes = detectStrokes(frames, fps());
       el("progress").textContent = `完了：${frames.length} フレーム中 ${found} フレームで人を検出（${seconds} 秒）`;
+      ok = true;
     }
   } catch (err) {
     el("progress").textContent = `解析に失敗しました：${err.message}`;
   }
   analyzing = false;
   setAnalyzing(false);
-  renderStrokes();
-  updateDisplay();
+  dataChanged();
+  return ok;
+}
+
+el("analyze").addEventListener("click", analyzeCurrent);
+
+// 読み込んだ全方向のうち、未解析の動画を順番に解析する
+el("analyzeAll").addEventListener("click", async () => {
+  const targets = Object.keys(VIEW_LABELS).filter((v) => views[v]?.url && !views[v].pose);
+  if (!targets.length) return alert("未解析の動画がありません（解析済みのものはそのまま使います）");
+  for (const v of targets) {
+    selectView(v);
+    await waitForVideo();
+    const ok = await analyzeCurrent();
+    if (!ok) break; // 中止・失敗したらそこで止める
+  }
 });
+
+// 動画の表示準備ができるまで待つ
+function waitForVideo() {
+  return new Promise((resolve) => {
+    if (video.readyState >= 2) return resolve();
+    video.addEventListener("loadeddata", resolve, { once: true });
+    video.addEventListener("error", resolve, { once: true });
+  });
+}
 
 el("stop").addEventListener("click", () => (stopRequested = true));
 el("showSkeleton").addEventListener("change", updateDisplay);
 
 function setAnalyzing(on) {
   el("analyze").disabled = on;
+  el("analyzeAll").disabled = on;
   el("stop").disabled = !on;
 }
 
@@ -456,8 +487,7 @@ el("detect").addEventListener("click", () => {
   const d = data();
   if (!d?.pose) return alert("先に骨格推定を行ってください");
   d.strokes = detectStrokes(d.pose, fps());
-  renderStrokes();
-  updateDisplay();
+  dataChanged();
 });
 
 el("addStroke").addEventListener("click", () => {
@@ -467,8 +497,7 @@ el("addStroke").addEventListener("click", () => {
   if (d.strokes.some((s) => s.frame === frame)) return;
   d.strokes.push({ frame, side: null, src: "manual" });
   d.strokes.sort((a, b) => a.frame - b.frame);
-  renderStrokes();
-  updateDisplay();
+  dataChanged();
 });
 
 function renderStrokes() {
@@ -494,12 +523,11 @@ function renderStrokes() {
     row.querySelector("select")?.addEventListener("change", (e) => {
       s.side = e.target.value || null;
       s.src = "manual";
-      renderStrokes();
+      dataChanged();
     });
     row.querySelector("td:last-child button").addEventListener("click", () => {
       strokes.splice(n, 1);
-      renderStrokes();
-      updateDisplay();
+      dataChanged();
     });
     body.appendChild(row);
   });
@@ -566,12 +594,61 @@ el("importJSON").addEventListener("change", async (event) => {
     d.fps = json.video.fps;
     fpsInput.value = d.fps;
     el("progress").textContent = `JSONから読み込みました（${json.frames.length} フレーム${d.world ? "" : "、3Dデータなし"}）`;
-    renderStrokes();
-    updateDisplay();
+    dataChanged();
   } catch (err) {
     alert(`読み込めませんでした：${err.message}`);
   }
 });
+
+// ================= 統合3Dモデル（全方向の代表ストローク） =================
+// fused：{ right: { frames, views, strokes }, left: ... }（推定値）
+let fused = null;
+
+// 解析結果・ストロークが変わったら呼ぶ（統合モデルとコメントを作り直し、表示を更新）
+function dataChanged() {
+  refreshFusion();
+  renderStrokes();
+  updateDisplay();
+}
+
+function refreshFusion() {
+  const usable = Object.entries(views).filter(([v, d]) => d?.body && d.strokes.length > 1 && el(`fuse-${v}`).checked);
+  const reps = Object.fromEntries(usable.map(([v, d]) => [v, viewRepresentative(d)]));
+  fused = usable.length ? fuseViews(reps) : null;
+
+  const describe = (side, label) => {
+    const f = fused?.[side];
+    if (!f) return `${label}：データなし`;
+    return `${label}：` + Object.entries(f.strokes).map(([v, n]) => `${VIEW_LABELS[v]}${n}本`).join("・");
+  };
+  el("fusionInfo").textContent = fused
+    ? `統合に使ったストローク（代表ストロークの平均）… ${describe("right", "右漕ぎ")}／${describe("left", "左漕ぎ")}`
+    : "解析済みの動画がありません。";
+  renderFeedback(usable.map(([, d]) => d));
+}
+
+Object.keys(VIEW_LABELS).forEach((v) => el(`fuse-${v}`).addEventListener("change", dataChanged));
+document.querySelectorAll("input[name=mode3d]").forEach((r) => r.addEventListener("change", updateDisplay));
+
+// ================= フォームのコメント（改善候補） =================
+const SIDE_LABEL = { right: "右漕ぎ", left: "左漕ぎ", all: "全体" };
+
+function renderFeedback(usedViews) {
+  const body = el("feedbackList");
+  body.innerHTML = "";
+  if (!fused) return;
+  for (const row of buildFeedback(fused, usedViews)) {
+    const tr = document.createElement("tr");
+    const value = Object.entries(row.values)
+      .map(([side, v]) => `${SIDE_LABEL[side]} ${v == null ? "--" : `${v.toFixed(1)}${row.unit}`}`)
+      .join("<br>");
+    const flagged = row.flagged.length > 0;
+    tr.innerHTML = `<td>${row.label}${row.extra ? `<br><span class="muted">${row.extra}</span>` : ""}</td>
+      <td>${value}</td>
+      <td>${flagged ? `<span class="flag">改善候補（${row.flagged.map((s) => SIDE_LABEL[s]).join("・")}）</span><br>${row.comment}` : '<span class="muted">目安の範囲内</span>'}</td>`;
+    body.appendChild(tr);
+  }
+}
 
 // ================= 3Dビュー =================
 setupView3d(el("view3d"));
@@ -582,13 +659,31 @@ el("showTrails").addEventListener("change", updateDisplay);
 
 // 3Dビューに渡す内容（現在フレームの骨格・パドル、現在のストロークの軌跡）
 function update3d(d, frame) {
-  const body = d?.body?.[frame] ?? null;
   const size = paddleSize();
+  const mode = document.querySelector("input[name=mode3d]:checked").value;
+  let body = null;
+  let range = [];
+
+  if (mode === "fused") {
+    // 統合モデル：今の動画のフレームがストロークの何%かを求め、代表ストロークのその位相を表示
+    const ph = d ? phaseAt(frame, d.strokes) : null;
+    const rep = ph && fused?.[ph.side];
+    body = rep?.frames[ph.index] ?? null;
+    if (body) range = rep.frames.slice(0, ph.index + 1);
+    el("mode3dInfo").textContent = !fused ? "統合モデルはまだありません（解析すると作られます）"
+      : !ph ? "ストロークの区間外です"
+      : !rep ? `この${{ left: "左", right: "右" }[ph.side] ?? "不明な側の"}漕ぎストロークの統合データがありません`
+      : `統合モデル：${SIDE_LABEL[ph.side]} ${ph.index}%（${rep.views.map((v) => VIEW_LABELS[v]).join("・")}の代表ストローク）`;
+  } else {
+    body = d?.body?.[frame] ?? null;
+    const n = d ? strokeIndexAt(frame, d.strokes) : -1;
+    if (body && n >= 0) range = d.body.slice(d.strokes[n].frame, frame + 1);
+    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）だけの推定` : "";
+  }
+
   const paddle = estimatePaddle(body, size);
   const trails = [];
-  const n = d ? strokeIndexAt(frame, d.strokes) : -1;
-  if (body && n >= 0 && el("showTrails").checked) {
-    const range = d.body.slice(d.strokes[n].frame, frame + 1);
+  if (body && range.length && el("showTrails").checked) {
     trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null) });
     trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null) });
     trails.push({ color: getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim(), points: range.map((b) => estimatePaddle(b, size)?.tip ?? null) });

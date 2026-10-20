@@ -5,16 +5,18 @@ import { P, MIN_VISIBILITY } from "./angles.js";
 
 // 骨格線（つなぐ関節の組み合わせ）
 export const BONES = [
+  [P.lEar, P.rEar], [P.nose, P.lEar], [P.nose, P.rEar], // 頭
+  [P.lEar, P.lShoulder], [P.rEar, P.rShoulder],          // 首
   [P.lShoulder, P.rShoulder], [P.lHip, P.rHip],
   [P.lShoulder, P.lElbow], [P.lElbow, P.lWrist], [P.rShoulder, P.rElbow], [P.rElbow, P.rWrist],
   [P.lShoulder, P.lHip], [P.rShoulder, P.rHip],
   [P.lHip, P.lKnee], [P.lKnee, P.lAnkle], [P.rHip, P.rKnee], [P.rKnee, P.rAnkle],
 ];
 
-// 描く関節（顔や指先は除く）
+// 描く関節（頭は鼻・両耳。目・口・指先は除く）
 export const JOINTS = Object.values(P);
 
-const LEFT = new Set([P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
+const LEFT = new Set([P.lEar, P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
 export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b" };
 
 export const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);

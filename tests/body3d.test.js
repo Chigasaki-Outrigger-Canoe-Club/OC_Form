@@ -3,32 +3,9 @@ import assert from "node:assert/strict";
 import { toBodyFrame, estimatePaddle, cameraBasis, project } from "../js/body3d.js";
 import { readVideoInfo } from "../js/mp4-info.js";
 import { P } from "../js/angles.js";
+import { seatedBody, toMediaPipe } from "./helpers.js";
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
-
-// 選手基準の座標（X左・Y上・Z前、単位m）で座った姿勢を作る
-function seatedBody() {
-  const b = Array.from({ length: 33 }, () => ({ x: 0, y: 0.5, z: 0, v: 1 }));
-  const set = (i, x, y, z) => (b[i] = { x, y, z, v: 1 });
-  set(P.lHip, 0.15, 0.5, 0); set(P.rHip, -0.15, 0.5, 0);
-  set(P.lShoulder, 0.2, 1.0, 0.1); set(P.rShoulder, -0.2, 1.0, 0.1);
-  set(P.lKnee, 0.15, 0.6, 0.45); set(P.rKnee, -0.15, 0.6, 0.45);
-  set(P.lAnkle, 0.15, 0.1, 0.8); set(P.rAnkle, -0.15, 0.1, 0.8);
-  [29, 30, 31, 32].forEach((i, k) => set(i, k % 2 ? -0.15 : 0.15, 0.1, 0.85));
-  set(P.lWrist, 0.1, 1.4, 0.4); set(P.rWrist, -0.1, 0.9, 0.5);
-  return b;
-}
-
-// 選手基準 → MediaPipe の向き（カメラに対して angle だけ回し、y下・z奥に戻す）
-function toMediaPipe(body, angle) {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return body.map((p) => {
-    const x = p.x * c - p.z * s;
-    const z = p.x * s + p.z * c;
-    return { x, y: -(p.y - 0.5), z: -z, v: 1 };
-  });
-}
 
 test("3D：カメラの向きに関係なく、選手の左＝+X、床＝0 にそろう", () => {
   for (const angle of [0, Math.PI / 2, -Math.PI / 2, Math.PI, 0.7]) {

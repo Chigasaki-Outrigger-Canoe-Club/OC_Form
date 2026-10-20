@@ -3,6 +3,7 @@
 
 import { cameraBasis, project, add, scale } from "./body3d.js";
 import { BONES, JOINTS, colorOf } from "./overlay.js";
+import { P } from "./angles.js";
 
 const FIXED = {
   front: { yaw: 0, pitch: 0.15 },
@@ -115,6 +116,20 @@ function draw() {
     for (const [a, b] of BONES) {
       ctx.globalAlpha = Math.min(body[a].v, body[b].v) < 0.5 ? 0.3 : 1;
       line(body[a], body[b], colorOf(b), 3);
+    }
+    // 頭：両耳の中点を中心に半径10cmの円
+    const ears = [body[P.lEar], body[P.rEar]];
+    if (Math.min(ears[0].v, ears[1].v) >= 0.5) {
+      const center = scale(add(ears[0], ears[1]), 0.5);
+      const c = to2d(center);
+      const top = to2d(add(center, { x: 0, y: 0.1, z: 0 }));
+      if (c && top) {
+        ctx.strokeStyle = cssColor("--text");
+        ctx.lineWidth = 2 * ratio;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, Math.hypot(top.x - c.x, top.y - c.y), 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     for (const i of JOINTS) {
       const p = to2d(body[i]);

@@ -4,11 +4,12 @@
 //   スマホ … 1本指＝回転、2本指＝ピンチでズーム・そのまま動かすと移動
 // 人の形は「関節の位置」から作った見た目で、体の表面を測ったものではない（解析には使わない）
 
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+// Three.js はCDNの「+esm」版を直接読む（import map が使えない古いスマホのブラウザでも読めるように）
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/+esm";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js/+esm";
+import { LineSegments2 } from "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/lines/LineSegments2.js/+esm";
+import { LineSegmentsGeometry } from "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/lines/LineSegmentsGeometry.js/+esm";
+import { LineMaterial } from "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/lines/LineMaterial.js/+esm";
 import { JOINTS, colorOf } from "./overlay.js";
 import { P } from "./angles.js";
 import { bladeOutline } from "./body3d.js";

@@ -8,7 +8,6 @@ import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
-import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
@@ -334,8 +333,19 @@ el("loopPhase").addEventListener("input", (e) => {
 });
 document.querySelectorAll("input[name=loopSide]").forEach((r) => r.addEventListener("change", updateDisplay));
 
-setupView3d(el("view3d"));
-document.querySelectorAll("[data-view3d]").forEach((b) => b.addEventListener("click", () => setFixedView(b.dataset.view3d)));
+// 3D表示は別に読み込む。古い端末などで読めなくても、ほかの機能（解析・GitHubのデータ・改善点）は使える
+let view3d = null;
+import("./view3d.js")
+  .then((m) => {
+    view3d = m;
+    m.setupView3d(el("view3d"));
+    updateDisplay();
+  })
+  .catch((err) => {
+    const note = Object.assign(document.createElement("p"), { className: "flag", textContent: `この端末では3Dモデルを表示できません（${err.message}）。改善点などは表示できます。` });
+    el("view3d").replaceWith(note);
+  });
+document.querySelectorAll("[data-view3d]").forEach((b) => b.addEventListener("click", () => view3d?.setFixedView(b.dataset.view3d)));
 document.querySelectorAll("input[name=mode3d]").forEach((r) => r.addEventListener("change", updateDisplay));
 el("showTrails").addEventListener("change", updateDisplay);
 Object.keys(VIEW_LABELS).forEach((v) => el(`fuse-${v}`).addEventListener("change", dataChanged));
@@ -874,7 +884,7 @@ function update3d(d, frame) {
     trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null), drive });
     trails.push({ color: paddleColor, points: range.map((b) => estimatePaddle(b, size, side)?.tip ?? null), drive });
   }
-  updateView3d(body, estimatePaddle(body, size, side), trails, spine);
+  view3d?.updateView3d(body, estimatePaddle(body, size, side), trails, spine);
   el("paddleNote").textContent = size.usedDefaults.length ? "パドル寸法の一部は標準値です（選手欄で入力できます）。" : "";
 }
 

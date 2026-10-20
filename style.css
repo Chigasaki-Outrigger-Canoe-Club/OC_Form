@@ -176,3 +176,7 @@ body {
 .info dd { margin: 0; font-variant-numeric: tabular-nums; }
 .info input { width: 6em; cursor: text; }
 .info input.wide, .info input[type="date"] { width: 100%; }
+.row .wide { flex: 1; min-width: 12em; cursor: text; }
+
+.sub { margin: var(--gap) 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.sub summary { cursor: pointer; }

@@ -14,6 +14,7 @@ import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
 import { viewRepresentative, fuseViews, phaseAt } from "./fusion.js";
 import { buildFeedback } from "./feedback.js";
+import * as github from "./github.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -320,7 +321,52 @@ async function saveCurrentSession() {
     el("sessionNote").textContent = `保存できませんでした：${err.message}`;
   }
   renderSessions();
+  if (ok) await uploadToGitHub(session);
   return ok;
+}
+
+// ================= GitHubへの自動保存（解析結果のみ） =================
+const GITHUB_KEY = "oc-form-github";
+let ghSettings = { ...github.DEFAULT_SETTINGS };
+try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
+el("ghEnabled").checked = ghSettings.enabled;
+el("ghToken").value = ghSettings.token;
+el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
+
+function saveGhSettings() {
+  ghSettings = { ...ghSettings, enabled: el("ghEnabled").checked, token: el("ghToken").value.trim() };
+  try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
+}
+
+el("ghEnabled").addEventListener("change", saveGhSettings);
+el("ghToken").addEventListener("change", saveGhSettings);
+
+el("ghTest").addEventListener("click", async () => {
+  saveGhSettings();
+  el("ghNote").textContent = "確認中…";
+  try {
+    const info = await github.testConnection(ghSettings);
+    el("ghNote").textContent = `接続できました（${info.private ? "非公開" : "公開"}リポジトリ）。`;
+  } catch (err) {
+    el("ghNote").textContent = `接続できません：${err.message}`;
+  }
+});
+
+// ローカル保存のあとに呼ぶ。失敗してもローカルの保存はそのまま
+async function uploadToGitHub(session) {
+  if (!ghSettings.enabled) return;
+  if (!ghSettings.token) {
+    el("ghNote").textContent = "トークンが未入力のため、GitHubには保存していません。";
+    return;
+  }
+  el("ghNote").textContent = "GitHubに保存中…";
+  try {
+    const url = await github.uploadSession(ghSettings, session);
+    el("ghNote").innerHTML = "";
+    el("ghNote").append("GitHubに保存しました：", Object.assign(document.createElement("a"), { href: url, target: "_blank", textContent: github.sessionPath(session) }));
+  } catch (err) {
+    el("ghNote").textContent = `GitHubに保存できませんでした（ブラウザ内には保存済み）：${err.message}`;
+  }
 }
 
 el("newSession").addEventListener("click", () => {

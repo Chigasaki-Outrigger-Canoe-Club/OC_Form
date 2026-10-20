@@ -159,7 +159,20 @@
             <tbody id="sessionList"></tbody>
           </table>
         </div>
-        <p class="muted">選択中の選手のデータを、このPCのブラウザ内に保存します（外部には送信しません）。開いたデータを修正して「保存」すると上書きします。動画1本で約60〜70MB使います。<span id="storageUsage"></span></p>
+        <details class="sub">
+          <summary>GitHubにも自動保存する</summary>
+          <p class="muted">保存先：<span id="ghRepo"></span>。保存のたびに解析結果（JSON）を送ります。動画は送りません。<strong>このリポジトリは公開なので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
+          <div class="row">
+            <label><input type="checkbox" id="ghEnabled"> 保存のたびにGitHubへ送る</label>
+          </div>
+          <div class="row">
+            <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
+            <button class="btn" id="ghTest">接続テスト</button>
+          </div>
+          <p id="ghNote" class="muted"></p>
+          <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。</p>
+        </details>
+        <p class="muted">選択中の選手のデータを、このPCのブラウザ内に保存します。開いたデータを修正して「保存」すると上書きします。動画1本で約60〜70MB使います。<span id="storageUsage"></span></p>
       </section>
 
       <section class="panel">

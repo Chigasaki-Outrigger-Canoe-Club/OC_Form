@@ -6,6 +6,7 @@
   --muted: #667085;
   --accent: #0b6e99;
   --border: #d7dde4;
+  --danger: #e5484d;
   --gap: 12px;
   --radius: 8px;
 }
@@ -18,6 +19,7 @@
     --muted: #98a2b3;
     --accent: #4fb3e0;
     --border: #2e3742;
+    --danger: #ff6369;
   }
 }
 
@@ -53,7 +55,10 @@ body {
   grid-template-columns: 2fr 1fr;
   gap: var(--gap);
   padding: 16px;
+  align-items: start;
 }
+
+.column { display: grid; gap: var(--gap); }
 
 @media (max-width: 800px) {
   .layout { grid-template-columns: 1fr; }
@@ -92,12 +97,46 @@ body {
 .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tab.loaded::after { content: " ●"; }
 
-video {
-  width: 100%;
+/* 動画と骨格キャンバスを同じ位置に重ねる */
+.stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
   background: #000;
   border-radius: var(--radius);
-  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  margin-bottom: var(--gap);
+  max-height: 70vh;
 }
+
+.stage video, .stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stage canvas { touch-action: none; }
+
+.chart { width: 100%; height: 180px; display: block; }
+
+.btn.small { padding: 2px 6px; font-size: 0.85rem; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.scroll { max-height: 260px; overflow-y: auto; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.table th, .table td { padding: 4px; border-bottom: 1px solid var(--border); text-align: left; }
 
 #seek { width: 100%; margin-bottom: var(--gap); }
 

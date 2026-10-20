@@ -9,54 +9,122 @@
 <body>
   <header class="header">
     <h1>OC Form 解析</h1>
-    <span class="badge">MVP 1：動画の読み込み・再生</span>
+    <span class="badge">MVP 1：動画・骨格解析</span>
   </header>
 
   <main class="layout">
-    <section class="panel">
-      <h2>動画</h2>
-      <div class="row">
-        <button class="tab" data-view="front">前</button>
-        <button class="tab" data-view="left">左</button>
-        <button class="tab" data-view="right">右</button>
-        <button class="tab" data-view="back">後ろ</button>
-      </div>
-      <div class="row">
-        <label class="btn">
-          動画を選択
-          <input type="file" id="fileInput" accept="video/*" hidden>
-        </label>
-        <span id="fileName" class="muted">未選択</span>
-      </div>
-      <video id="video" playsinline></video>
-      <p id="emptyNote" class="muted">方向を選んでから動画を選択してください。動画はこのPC内でのみ処理され、外部に送信されません。</p>
-    </section>
+    <!-- 左列：動画とグラフ -->
+    <div class="column">
+      <section class="panel">
+        <div class="row">
+          <button class="tab" data-view="front">前</button>
+          <button class="tab" data-view="left">左</button>
+          <button class="tab" data-view="right">右</button>
+          <button class="tab" data-view="back">後ろ</button>
+          <label class="btn">
+            動画を選択
+            <input type="file" id="fileInput" accept="video/*" hidden>
+          </label>
+          <span id="fileName" class="muted">未選択</span>
+        </div>
+        <div class="stage" id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <p id="emptyNote" class="muted">方向を選んでから動画を選択してください。動画はこのPC内でのみ処理され、外部に送信されません。</p>
+        <input type="range" id="seek" min="0" max="0" value="0">
+        <div class="row">
+          <button class="btn" id="prev">◀ 1コマ</button>
+          <button class="btn" id="play">▶ 再生</button>
+          <button class="btn" id="next">1コマ ▶</button>
+          <select id="speed" class="btn">
+            <option value="0.25">0.25倍</option>
+            <option value="0.5">0.5倍</option>
+            <option value="1" selected>1倍</option>
+            <option value="2">2倍</option>
+          </select>
+          <span class="muted">スペース＝再生/停止、← →＝コマ送り</span>
+        </div>
+      </section>
 
-    <section class="panel">
-      <h2>再生操作</h2>
-      <input type="range" id="seek" min="0" max="0" value="0">
-      <div class="row">
-        <button class="btn" id="prev">◀ 1コマ</button>
-        <button class="btn" id="play">▶ 再生</button>
-        <button class="btn" id="next">1コマ ▶</button>
-        <select id="speed" class="btn">
-          <option value="0.25">0.25倍</option>
-          <option value="0.5">0.5倍</option>
-          <option value="1" selected>1倍</option>
-          <option value="2">2倍</option>
-        </select>
-      </div>
-      <p class="muted">キー操作：スペース＝再生/停止、← →＝コマ送り</p>
+      <section class="panel">
+        <h2>角度の時系列</h2>
+        <div class="row">
+          <select id="angleSelect" class="btn"></select>
+          <span class="muted">グラフをクリックするとその位置へ移動。縦線＝ストロークの区切り</span>
+        </div>
+        <canvas id="chart" class="chart"></canvas>
+        <p class="muted">角度は画像上の2D座標から計算した値です。カメラの向きにより真の関節角度とは異なります。信頼度が低い区間は表示しません。</p>
+      </section>
+    </div>
 
-      <dl class="info">
-        <dt>時間</dt><dd id="time">--</dd>
-        <dt>フレーム（推定）</dt><dd id="frame">--</dd>
-        <dt>長さ</dt><dd id="duration">--</dd>
-        <dt>解像度</dt><dd id="resolution">--</dd>
-        <dt>fps（手入力）</dt><dd><input type="number" id="fps" value="60" min="1" max="240"></dd>
-      </dl>
-      <p class="muted">ブラウザは動画のfpsを読み取れないため、撮影時の値を入力してください。フレーム番号はこの値からの推定です。</p>
-    </section>
+    <!-- 右列：情報と操作 -->
+    <div class="column">
+      <section class="panel">
+        <h2>動画の情報</h2>
+        <dl class="info">
+          <dt>時間</dt><dd id="time">--</dd>
+          <dt>フレーム</dt><dd id="frame">--</dd>
+          <dt>長さ</dt><dd id="duration">--</dd>
+          <dt>解像度</dt><dd id="resolution">--</dd>
+          <dt>fps</dt><dd><input type="number" id="fps" value="60" min="1" max="240" step="any"> <span id="fpsSource" class="muted"></span></dd>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>選手情報</h2>
+        <dl class="info">
+          <dt>身長</dt><dd><input type="number" id="height" min="100" max="230"> cm</dd>
+          <dt>体重</dt><dd><input type="number" id="weight" min="30" max="200"> kg</dd>
+          <dt>パドル全長</dt><dd><input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></dd>
+        </dl>
+        <p class="muted">このブラウザ内に保存されます。寸法による実寸換算はMVP 2で実装予定です。</p>
+      </section>
+
+      <section class="panel">
+        <h2>骨格推定</h2>
+        <div class="row">
+          <button class="btn" id="analyze">解析開始</button>
+          <button class="btn" id="stop" disabled>中止</button>
+          <label><input type="checkbox" id="showSkeleton" checked> 骨格を表示</label>
+        </div>
+        <p id="progress" class="muted">未解析</p>
+        <p class="muted">初回はMediaPipeのライブラリとモデル（約10MB）をダウンロードします。動画は送信しません。停止中に関節をドラッグすると手動修正できます（赤い点＝修正済み）。</p>
+      </section>
+
+      <section class="panel">
+        <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
+        <div class="row">
+          <button class="btn" id="detect">自動検出</button>
+          <button class="btn" id="addStroke">現在位置に区切りを追加</button>
+        </div>
+        <p class="muted">区切り＝手が最も高い時点（自動検出の推定値）。漕ぐ側はストロークごとに推定します。パドルチェンジの前後は確認して修正してください。</p>
+        <div class="scroll">
+          <table class="table">
+            <thead><tr><th>No.</th><th>開始</th><th>漕ぐ側</th><th></th></tr></thead>
+            <tbody id="strokeList"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>現在フレームの角度</h2>
+        <dl class="info" id="currentAngles"></dl>
+      </section>
+
+      <section class="panel">
+        <h2>書き出し・読み込み</h2>
+        <div class="row">
+          <button class="btn" id="exportCSV">CSV</button>
+          <button class="btn" id="exportJSON">JSON</button>
+          <label class="btn">
+            JSONを読み込む
+            <input type="file" id="importJSON" accept=".json,application/json" hidden>
+          </label>
+        </div>
+        <p class="muted">JSONを保存しておくと、次回は解析をやり直さずに読み込めます（同じ動画を選んでから読み込んでください）。</p>
+      </section>
+    </div>
   </main>
 
   <script type="module" src="js/main.js"></script>

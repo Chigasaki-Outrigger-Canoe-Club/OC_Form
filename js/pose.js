@@ -4,6 +4,7 @@
 // 将来：オフライン利用のため、ライブラリとモデルをリポジトリ内に置く予定
 
 import { frameCount, frameToTime } from "./frame-math.js";
+import { backProfile } from "./spine.js";
 
 const VERSION = "0.10.14";
 const LIB = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}`;
@@ -21,6 +22,7 @@ async function load() {
     baseOptions: { modelAssetPath: MODEL, delegate },
     runningMode: "VIDEO",
     numPoses: 1,
+    outputSegmentationMasks: true, // 人物のシルエット（背中の輪郭から背骨の曲がりを推定するため）
   });
   try {
     landmarker = await create("GPU");
@@ -39,8 +41,9 @@ function seekTo(video, time) {
 
 const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
 
-// 動画の全フレームを解析。戻り値：{ frames, world }（人が見つからないフレームは null）
+// 動画の全フレームを解析。戻り値：{ frames, world, spine }（人が見つからないフレームは null）
 //   frames：画像上のピクセル座標、world：MediaPipe の3D推定座標（腰の中心が原点、およそメートル）
+//   spine：シルエットから測った背中の膨らみ（spine.js の backProfile。測れないフレームは null）
 export async function analyzeVideo(video, fps, onProgress, isStopped) {
   const model = await load();
   const total = frameCount(video.duration, fps);
@@ -48,6 +51,7 @@ export async function analyzeVideo(video, fps, onProgress, isStopped) {
   const h = video.videoHeight;
   const frames = [];
   const world = [];
+  const spine = [];
   video.pause();
 
   for (let f = 0; f < total && !isStopped(); f++) {
@@ -62,7 +66,19 @@ export async function analyzeVideo(video, fps, onProgress, isStopped) {
     world.push(person3d
       ? person3d.map((p) => ({ x: round(p.x, 4), y: round(p.y, 4), z: round(p.z, 4), v: round(p.visibility, 3) }))
       : null);
+    spine.push(person ? measureSpine(result.segmentationMasks?.[0], person) : null);
+    result.segmentationMasks?.forEach((m) => m.close()); // マスクのメモリを解放
     onProgress(f + 1, total);
   }
-  return { frames, world };
+  return { frames, world, spine };
+}
+
+// シルエットから背中の膨らみを測る。マスクがない・読めないときは null
+function measureSpine(mask, person) {
+  if (!mask) return null;
+  try {
+    return backProfile(mask.getAsFloat32Array(), mask.width, mask.height, person);
+  } catch {
+    return null;
+  }
 }

@@ -27,16 +27,18 @@ function makeView(angle, depthError, scale = 1) {
 }
 
 const maxError = (frames) => Math.max(...frames.flatMap((f, i) => {
-  const truth = truthAt(Math.round((i / (PHASES - 1)) * 29.999));
+  const truth = truthAt(Math.round((i / (PHASES - 1)) * 29)); // 1ストローク＝フレーム0〜29
   return [P.lElbow, P.rWrist, P.lKnee].map((j) => Math.hypot(f[j].x - truth[j].x, f[j].z - truth[j].z));
 }));
 
-test("ストロークの位相そろえ：0%＝開始、50%＝中間、100%＝終了", () => {
+test("ストロークの位相そろえ：0%＝開始、100%＝次のストロークの直前のフレーム", () => {
   const body = Array.from({ length: 11 }, (_, f) => [{ x: f, y: 0, z: 0, v: 1 }]);
-  const r = resampleStroke(body, 0, 10);
+  const r = resampleStroke(body, 0, 10); // フレーム0〜9（10は次のストロークの始まり）
   assert.equal(r.length, PHASES);
-  near(r[0][0].x, 0); near(r[50][0].x, 5); near(r[100][0].x, 10); near(r[25][0].x, 2.5);
-  body[5] = null;
+  near(r[0][0].x, 0); near(r[50][0].x, 4.5); near(r[100][0].x, 9);
+  body[10] = { bad: true }; // 次のストロークのフレームは使わない
+  assert.doesNotThrow(() => resampleStroke(body, 0, 10));
+  body[4] = null;
   assert.equal(resampleStroke(body, 0, 10)[50], null);
 });
 
@@ -88,4 +90,16 @@ test("フレーム → 位相と漕ぐ側", () => {
   assert.deepEqual(phaseAt(15, STROKES), { index: 50, side: "right" });
   assert.deepEqual(phaseAt(45, STROKES), { index: 50, side: "right" });
   assert.equal(phaseAt(60, STROKES), null);
+});
+
+test("背中の膨らみ：横からの動画だけを使って位相ごとに平均する", () => {
+  const side = makeView(Math.PI / 2, 0);
+  side.spine = side.body.map((_, f) => [0, 0.05 + 0.05 * Math.sin((Math.PI * (f % 30)) / 30), 0]);
+  const back = makeView(Math.PI, 0);
+  back.spine = back.body.map(() => [0, 0.5, 0]); // 後ろからの値は使われないはず
+  const fused = fuseViews({ side: viewRepresentative(side), back: viewRepresentative(back) });
+  near(fused.right.spine[0][1], 0.05, 1e-6);
+  near(fused.right.spine[50][1], 0.1, 0.002);
+  // 横からの動画がなければ null
+  assert.equal(fuseViews({ back: viewRepresentative(back) }).right.spine, null);
 });

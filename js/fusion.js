@@ -32,14 +32,40 @@ function lerpFrame(a, b, t) {
   }));
 }
 
-// 1ストローク（start〜end フレーム）を PHASES 点に並べ直す。欠けたフレームの位相は null
+// ストロークの最後のフレーム。end は次のストロークの最初のフレームなので使わない
+// （パドルチェンジのときは、次のストロークで上の手と下の手が入れ替わっているため）
+const last = (start, end) => Math.max(start, end - 1);
+
+// 1ストローク（start〜end−1 フレーム）を PHASES 点に並べ直す。欠けたフレームの位相は null
 export function resampleStroke(body, start, end) {
   return Array.from({ length: PHASES }, (_, i) => {
-    const pos = start + ((end - start) * i) / (PHASES - 1);
+    const pos = start + ((last(start, end) - start) * i) / (PHASES - 1);
     const lo = Math.floor(pos);
-    const hi = Math.min(lo + 1, end);
+    const hi = Math.min(lo + 1, last(start, end));
     if (!body[lo] || !body[hi]) return null;
     return lerpFrame(body[lo], body[hi], pos - lo);
+  });
+}
+
+// 数値の配列の列（例：背中の膨らみ [30%,50%,70%]）を PHASES 点に並べ直す。欠けた位相は null
+export function resampleSeries(series, start, end) {
+  return Array.from({ length: PHASES }, (_, i) => {
+    const pos = start + ((last(start, end) - start) * i) / (PHASES - 1);
+    const lo = Math.floor(pos);
+    const hi = Math.min(lo + 1, last(start, end));
+    const a = series[lo];
+    const b = series[hi];
+    if (!a || !b) return null;
+    return a.map((v, k) => v + (b[k] - v) * (pos - lo));
+  });
+}
+
+// 数値の配列の列を、位相ごとに平均する（欠けは除く）
+export function averageSeries(list) {
+  return Array.from({ length: PHASES }, (_, i) => {
+    const values = list.map((s) => s[i]).filter(Boolean);
+    if (!values.length) return null;
+    return values[0].map((_, k) => values.reduce((sum, v) => sum + v[k], 0) / values.length);
   });
 }
 
@@ -56,14 +82,16 @@ export function averageStrokes(strokes) {
   });
 }
 
-// 1方向分の代表ストローク { right, left, counts, reliability, torso }
-// view：{ body, world, strokes }
+// 1方向分の代表ストローク { right, left, spine, counts, reliability, sideWeight, torso }
+// view：{ body, world, strokes, spine }（spine＝フレームごとの背中の膨らみ。なければ省略可）
 export function viewRepresentative(view) {
   const groups = { right: [], left: [] };
+  const spines = { right: [], left: [] };
   view.strokes.forEach((s, n) => {
     const next = view.strokes[n + 1];
     if (!next || !groups[s.side]) return;
     groups[s.side].push(resampleStroke(view.body, s.frame, next.frame));
+    if (view.spine) spines[s.side].push(resampleSeries(view.spine, s.frame, next.frame));
   });
 
   const cam = cameraDirection(view.world);
@@ -71,8 +99,11 @@ export function viewRepresentative(view) {
   return {
     right: groups.right.length ? averageStrokes(groups.right) : null,
     left: groups.left.length ? averageStrokes(groups.left) : null,
+    spine: { right: spines.right.length ? averageSeries(spines.right) : null, left: spines.left.length ? averageSeries(spines.left) : null },
     counts: { right: groups.right.length, left: groups.left.length },
     reliability,
+    // 背中の輪郭は横から撮ったときだけ意味がある。横向きの度合い＝カメラ方向の左右成分の2乗
+    sideWeight: cam.x ** 2,
     camera: cam,
     torso: median(view.body.filter(Boolean).map(torso)),
   };
@@ -108,8 +139,15 @@ export function fuseViews(reps) {
         return point;
       });
     });
+    // 背中の膨らみ：横から撮った動画を重く使って平均（横からの動画がなければ null）
+    const spine = Array.from({ length: PHASES }, (_, i) => {
+      const src = used.map(([, r]) => ({ v: r.spine?.[side]?.[i], w: r.sideWeight })).filter((x) => x.v && x.w > 0.3);
+      const total = src.reduce((sum, x) => sum + x.w, 0);
+      return total ? [0, 1, 2].map((k) => src.reduce((sum, x) => sum + x.v[k] * x.w, 0) / total) : null;
+    });
     return {
       frames,
+      spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),
     };

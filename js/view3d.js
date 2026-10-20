@@ -57,11 +57,25 @@ export function setFixedView(name) {
   draw();
 }
 
-// 表示内容を更新する。trails：[{ points: [{x,y,z}], color }]
-export function updateView3d(body, paddle, trails) {
-  scene = { body, paddle, trails };
+// 表示内容を更新する
+// trails：[{ points: [{x,y,z}], color, drive: [true/false...] }]（drive が true の区間は赤で描く）
+// spine：背骨の点 [腰の中点, 30%, 50%, 70%, 肩の中点]（なければ腰と肩を直線で結ぶ）
+export function updateView3d(body, paddle, trails, spine = null) {
+  scene = { body, paddle, trails, spine };
   draw();
 }
+
+// 肉付き：体の各部を「太さのある棒（カプセル）」で表す。半径は成人の目安（m）
+const FLESH = [
+  [P.lShoulder, P.lElbow, 0.045], [P.rShoulder, P.rElbow, 0.045], // 上腕
+  [P.lElbow, P.lWrist, 0.035], [P.rElbow, P.rWrist, 0.035],       // 前腕
+  [P.lHip, P.lKnee, 0.075], [P.rHip, P.rKnee, 0.075],             // 大腿
+  [P.lKnee, P.lAnkle, 0.05], [P.rKnee, P.rAnkle, 0.05],           // 下腿
+  [P.lAnkle, 31, 0.035], [P.rAnkle, 32, 0.035],                   // 足
+  [P.lShoulder, P.rShoulder, 0.06],                                // 肩まわり
+  [P.lHip, P.rHip, 0.085],                                         // 骨盤
+];
+const TORSO_RADIUS = [0.11, 0.115, 0.12, 0.125]; // 背骨の区間ごとの胴の半径（腰→胸）
 
 function draw() {
   if (!canvas) return;
@@ -103,33 +117,26 @@ function draw() {
     ctx.fillText("前", front.x, front.y);
   }
 
-  // 軌跡
+  // 軌跡（力を入れている区間＝赤・太め）
   for (const trail of scene.trails) {
     for (let i = 1; i < trail.points.length; i++) {
-      if (trail.points[i - 1] && trail.points[i]) line(trail.points[i - 1], trail.points[i], trail.color, 1.5);
+      if (!trail.points[i - 1] || !trail.points[i]) continue;
+      const drive = trail.drive?.[i];
+      line(trail.points[i - 1], trail.points[i], drive ? cssColor("--drive") : trail.color, drive ? 3 : 1.5);
     }
   }
 
   // 骨格
   const body = scene.body;
   if (body) {
+    drawFlesh(ctx, body, scene.spine, cam, w, h, focal);
+    if (scene.spine) {
+      for (let i = 1; i < scene.spine.length; i++) line(scene.spine[i - 1], scene.spine[i], cssColor("--text"), 2);
+    }
     for (const [a, b] of BONES) {
+      if (scene.spine && [P.lShoulder, P.rShoulder].includes(a) && [P.lHip, P.rHip].includes(b)) continue; // 胴の横線は背骨で表す
       ctx.globalAlpha = Math.min(body[a].v, body[b].v) < 0.5 ? 0.3 : 1;
       line(body[a], body[b], colorOf(b), 3);
-    }
-    // 頭：両耳の中点を中心に半径10cmの円
-    const ears = [body[P.lEar], body[P.rEar]];
-    if (Math.min(ears[0].v, ears[1].v) >= 0.5) {
-      const center = scale(add(ears[0], ears[1]), 0.5);
-      const c = to2d(center);
-      const top = to2d(add(center, { x: 0, y: 0.1, z: 0 }));
-      if (c && top) {
-        ctx.strokeStyle = cssColor("--text");
-        ctx.lineWidth = 2 * ratio;
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, Math.hypot(top.x - c.x, top.y - c.y), 0, Math.PI * 2);
-        ctx.stroke();
-      }
     }
     for (const i of JOINTS) {
       const p = to2d(body[i]);
@@ -161,11 +168,52 @@ function draw() {
     }
   }
 
+  ctx.fillStyle = cssColor("--drive");
+  ctx.font = `${12 * ratio}px system-ui`;
+  ctx.fillText("赤線＝力を入れている区間（手の動きからの推定）", 16 * ratio, h - 12 * ratio);
+
   if (!body) {
     ctx.fillStyle = cssColor("--muted");
     ctx.font = `${14 * ratio}px system-ui`;
     ctx.fillText("骨格推定を行うと3D骨格が表示されます", 16 * ratio, 28 * ratio);
   }
+}
+
+// 肉付きを描く：カプセルを奥から順に重ねる（手前のものが上に来る）
+function drawFlesh(ctx, body, spine, cam, w, h, focal) {
+  const mid = (a, b) => scale(add(a, b), 0.5);
+  const torso = spine ?? [mid(body[P.lHip], body[P.rHip]), mid(body[P.lShoulder], body[P.rShoulder])];
+  const neckTop = mid(body[P.lEar], body[P.rEar]);
+  const parts = [
+    ...FLESH.map(([a, b, r]) => [body[a], body[b], r]),
+    ...torso.slice(1).map((p, i) => [torso[i], p, TORSO_RADIUS[Math.min(i, 3)]]),
+    [torso.at(-1), neckTop, 0.05], // 首
+  ];
+  const projected = parts
+    .map(([a, b, r]) => ({ a: project(a, cam, w, h, focal), b: project(b, cam, w, h, focal), r }))
+    .filter((p) => p.a && p.b)
+    .sort((p, q) => q.a.depth + q.b.depth - (p.a.depth + p.b.depth));
+
+  ctx.lineCap = "round";
+  ctx.strokeStyle = cssColor("--skin");
+  ctx.globalAlpha = 0.55;
+  for (const p of projected) {
+    ctx.lineWidth = (2 * p.r * focal) / ((p.a.depth + p.b.depth) / 2);
+    ctx.beginPath();
+    ctx.moveTo(p.a.x, p.a.y);
+    ctx.lineTo(p.b.x, p.b.y);
+    ctx.stroke();
+  }
+  // 頭：両耳の中点を中心に半径10cmの球
+  const c = project(neckTop, cam, w, h, focal);
+  if (c) {
+    ctx.fillStyle = cssColor("--skin");
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, (0.1 * focal) / c.depth, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = "butt";
 }
 
 window.addEventListener("resize", draw);

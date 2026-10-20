@@ -10,6 +10,9 @@ import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { setupView3d, setFixedView, updateView3d } from "./view3d.js";
 import { viewRepresentative, fuseViews, phaseAt } from "./fusion.js";
+import { stabilizeLegs } from "./legs.js";
+import { spinePoints } from "./spine.js";
+import { detectDrive } from "./drive.js";
 import { buildFeedback } from "./feedback.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
@@ -24,9 +27,10 @@ const fpsInput = el("fps");
 const VIEW_LABELS = { front: "前", left: "左", right: "右", back: "後ろ" };
 const SIDE_LABEL = { right: "右漕ぎ", left: "左漕ぎ", all: "全体" };
 
-// 方向ごとのデータ { left: { file, url, name, fps, fpsSource, codec, pose, world, body, strokes }, ... }
+// 方向ごとのデータ { left: { file, url, name, fps, fpsSource, codec, pose, world, spine, body, strokes }, ... }
 //   file・url：動画（動画なしの過去データでは null）
-//   pose＝2D画像座標、world＝MediaPipeの3D推定、body＝worldを選手基準に変換した座標
+//   pose＝2D画像座標、world＝MediaPipeの3D推定、spine＝シルエットから測った背中の膨らみ
+//   body＝worldを選手基準に変換し、足首を固定・膝を拘束した座標（toBody で作る）
 const views = {};
 let currentView = "left";
 let analyzing = false;
@@ -36,6 +40,7 @@ let sessionId = null;  // 表示中の過去データのID（新しいデータ�
 let sessionDate = null;
 
 const data = () => views[currentView];
+const toBody = (world) => (world ? stabilizeLegs(toBodyFrame(world)) : null);
 const today = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
 
 // ================= 再生位置（動画があれば動画、なければ解析結果のフレーム） =================
@@ -244,6 +249,7 @@ el("fileInput").addEventListener("change", async (event) => {
     codec: info?.codec ?? null,
     pose: null,
     world: null,
+    spine: null,
     body: null,
     strokes: [],
   };
@@ -313,13 +319,14 @@ async function analyzeCurrent(label) {
   const d = data();
   if (!video.videoWidth) { showStatus(playbackProblem()); runStatus(`${label}：動画を表示できないため解析できません`); return false; }
   stopRequested = false;
-  const { frames, world } = await analyzeVideo(video, fps(), (done, total) => {
+  const { frames, world, spine } = await analyzeVideo(video, fps(), (done, total) => {
     runStatus(`${label}… ${done} / ${total} フレーム`);
   }, () => stopRequested);
   if (stopRequested) return false;
   d.pose = frames;
   d.world = world;
-  d.body = toBodyFrame(world);
+  d.spine = spine;
+  d.body = toBody(world);
   d.strokes = detectStrokes(frames, fps());
   return true;
 }
@@ -384,7 +391,7 @@ function dataChanged() {
     return `${SIDE_LABEL[side]}：` + (f ? Object.entries(f.strokes).map(([v, n]) => `${VIEW_LABELS[v]}${n}本`).join("・") : "データなし");
   };
   el("fusionInfo").textContent = fused ? `統合に使ったストローク… ${describe("right")}／${describe("left")}` : "";
-  renderFeedback(usable.map(([, d]) => d));
+  renderFeedback(usable.map(([name, d]) => ({ name, fps: d.fps, strokes: d.strokes })));
   renderStrokes();
   updateDisplay();
 }
@@ -396,13 +403,17 @@ function renderFeedback(usedViews) {
   if (!fused) return;
   for (const row of buildFeedback(fused, usedViews)) {
     const value = Object.entries(row.values)
-      .map(([side, v]) => `${SIDE_LABEL[side]} ${v == null ? "--" : `${v.toFixed(1)}${row.unit}`}`)
-      .join("<br>");
-    const comment = row.flagged.length
-      ? `<span class="flag">改善候補（${row.flagged.map((s) => SIDE_LABEL[s]).join("・")}）</span><br>${row.comment}`
-      : '<span class="muted">目安の範囲内</span>';
+      .filter(([, v]) => v != null)
+      .map(([side, v]) => `${SIDE_LABEL[side]} ${v.toFixed(1)}${row.unit}`)
+      .join("<br>") || "--";
+    const parts = [];
+    if (row.reason) parts.push(`<span class="muted">${row.reason}</span>`);
+    if (row.flagged.length) parts.push(`<span class="flag">改善候補（${row.flagged.map((s) => SIDE_LABEL[s]).join("・")}）</span><br>${row.comment}`);
+    if (row.lr) parts.push(`<span class="flag lr">左右差</span><br>${row.lr}`);
+    if (!parts.length) parts.push('<span class="muted">目安の範囲内・左右差なし</span>');
+    if (row.details?.length) parts.push(`<ul class="details">${row.details.map((d) => `<li>${d}</li>`).join("")}</ul>`);
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${row.label}${row.extra ? `<br><span class="muted">${row.extra}</span>` : ""}</td><td>${value}</td><td>${comment}</td>`;
+    tr.innerHTML = `<td>${row.label}${row.extra ? `<br><span class="muted">${row.extra}</span>` : ""}</td><td>${value}</td><td>${parts.join("<br>")}</td>`;
     body.appendChild(tr);
   }
 }
@@ -515,7 +526,8 @@ async function openSession(id) {
       codec: r.video.codec,
       pose: r.pose,
       world: r.world,
-      body: r.world ? toBodyFrame(r.world) : null,
+      spine: r.spine ?? null,
+      body: toBody(r.world),
       strokes: r.strokes,
     };
   }
@@ -679,32 +691,44 @@ function update3d(d, frame) {
   const size = paddleSize();
   const mode = document.querySelector("input[name=mode3d]:checked").value;
   let body = null;
-  let range = [];
+  let spine = null;
+  let range = [];  // 軌跡を描く区間（ストロークの始まり〜今）
+  let drive = [];  // その区間のうち力を入れているところ
 
   if (mode === "fused") {
     // 統合モデル：再生位置がストロークの何%かを求め、代表ストロークのその位相を表示
     const ph = d ? phaseAt(frame, d.strokes) : null;
     const rep = ph && fused?.[ph.side];
     body = rep?.frames[ph.index] ?? null;
-    if (body) range = rep.frames.slice(0, ph.index + 1);
+    if (body) {
+      spine = spinePoints(body, rep.spine?.[ph.index] ?? null);
+      range = rep.frames.slice(0, ph.index + 1);
+      drive = detectDrive(rep.frames, ph.side)?.mask.slice(0, ph.index + 1) ?? [];
+    }
     el("mode3dInfo").textContent = !fused ? "統合モデルはまだありません（解析すると作られます）"
       : !ph ? "ストロークの区間外です（再生すると表示されます）"
       : !rep ? `この${SIDE_LABEL[ph.side] ?? "（漕ぐ側が不明な）ストローク"}の統合データがありません`
       : `統合モデル：${SIDE_LABEL[ph.side]} ${ph.index}%（${rep.views.map((v) => VIEW_LABELS[v]).join("・")}の代表ストローク）`;
   } else {
     body = d?.body?.[frame] ?? null;
+    if (body) spine = spinePoints(body, d.spine?.[frame] ?? null);
     const n = d ? strokeIndexAt(frame, d.strokes) : -1;
-    if (body && n >= 0) range = d.body.slice(d.strokes[n].frame, frame + 1);
+    if (body && n >= 0) {
+      const { frame: start, side } = d.strokes[n];
+      range = d.body.slice(start, frame + 1);
+      drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame + 1), side)?.mask.slice(0, range.length) ?? [];
+    }
     el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）だけの推定` : "";
   }
 
   const trails = [];
   if (body && range.length && el("showTrails").checked) {
-    trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null) });
-    trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null) });
-    trails.push({ color: getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim(), points: range.map((b) => estimatePaddle(b, size)?.tip ?? null) });
+    const paddleColor = getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim();
+    trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null), drive });
+    trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null), drive });
+    trails.push({ color: paddleColor, points: range.map((b) => estimatePaddle(b, size)?.tip ?? null), drive });
   }
-  updateView3d(body, estimatePaddle(body, size), trails);
+  updateView3d(body, estimatePaddle(body, size), trails, spine);
   el("paddleNote").textContent = size.usedDefaults.length ? "パドル寸法の一部は標準値です（選手欄で入力できます）。" : "";
 }
 

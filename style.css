@@ -8,6 +8,8 @@
   --border: #d7dde4;
   --danger: #e5484d;
   --paddle: #a0703c;
+  --skin: #e8b994;
+  --drive: #e01e37;
   --gap: 12px;
   --radius: 8px;
 }
@@ -22,6 +24,8 @@
     --border: #2e3742;
     --danger: #ff6369;
     --paddle: #d9a066;
+    --skin: #b98a6a;
+    --drive: #ff4d5e;
   }
 }
 
@@ -156,6 +160,9 @@ body {
 
 .muted { color: var(--muted); font-size: 0.85rem; }
 .flag { color: var(--danger); font-weight: bold; }
+.flag.lr { color: var(--accent); }
+.details { margin: 4px 0 0; padding-left: 1.2em; }
+.details li { margin: 2px 0; }
 
 .row .wide { flex: 1; min-width: 12em; cursor: text; }
 

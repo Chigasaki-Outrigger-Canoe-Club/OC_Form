@@ -14,6 +14,7 @@ export function viewToRecord(d) {
     video: { name: d.name, fps: d.fps, fpsSource: d.fpsSource, codec: d.codec ?? null, size: d.file?.size ?? null },
     pose: d.pose ?? null,
     world: d.world ?? null,
+    spine: d.spine ?? null,
     strokes: d.strokes ?? [],
   };
 }

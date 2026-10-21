@@ -51,6 +51,7 @@ let skin, bodyGroup, paddleGroup, trailGroup;
 const parts = { limbs: [], rounds: [], hands: {}, feet: {}, markers: [] };
 let torso, pelvis, neck, head;
 let paddleKey = "";
+let gripMarkers = []; // パドルの持ち手（上の手・下の手）の目印
 const resolution = new THREE.Vector2(1, 1);
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -85,6 +86,14 @@ export function setupView3d(canvas) {
   trailGroup = new THREE.Group();
   scene3d.add(bodyGroup, paddleGroup, trailGroup);
   buildBody();
+  // 持ち手の目印：手首の点とは別に、パドルを握っている位置（手のひら）を示す
+  const gripMaterial = new THREE.MeshBasicMaterial({ color: css("--paddle"), depthTest: false, transparent: true });
+  gripMarkers = [0, 1].map(() => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), gripMaterial);
+    m.renderOrder = 11;
+    scene3d.add(m);
+    return m;
+  });
 
   placeCamera(0.6, 0.25, DISTANCE);
   new ResizeObserver(resize).observe(canvas);
@@ -316,7 +325,10 @@ function buildPaddle(pad) {
 
 function updatePaddle(pad) {
   paddleGroup.visible = Boolean(pad);
+  for (const m of gripMarkers) m.visible = Boolean(pad);
   if (!pad) return;
+  gripMarkers[0].position.copy(vec(pad.grip));
+  gripMarkers[1].position.copy(vec(pad.lowerGrip));
   // 寸法が変わったときだけ作り直す
   const key = [vec(pad.grip).distanceTo(vec(pad.bladeStart)), vec(pad.grip).distanceTo(vec(pad.tip)), pad.bladeWidth].map((x) => x.toFixed(3)).join();
   if (key !== paddleKey) {

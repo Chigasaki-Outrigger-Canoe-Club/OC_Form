@@ -61,17 +61,27 @@ export function toBodyFrame(worldFrames) {
   return rotated.map((f) => (f ? f.map((p) => ({ ...p, y: p.y - floor })) : null));
 }
 
+// パドルの持ち手（推定値）：人差し指と小指の付け根の中点
+// パドルは手首ではなく手のひらで握るため。手首を曲げたときの「手首と手の位置の違い」をパドルに反映する
+// 指の付け根が見えないとき（信頼度0.5未満）は手首を使う
+const HAND_POINTS = { left: [P.lWrist, 17, 19], right: [P.rWrist, 18, 20] }; // 手首、小指の付け根、人差し指の付け根
+export function gripPoint(body, hand) {
+  const [wrist, pinky, index] = HAND_POINTS[hand].map((i) => body[i]);
+  if (!pinky || !index || pinky.v < 0.5 || index.v < 0.5) return wrist;
+  return { x: (pinky.x + index.x) / 2, y: (pinky.y + index.y) / 2, z: (pinky.z + index.z) / 2, v: Math.min(pinky.v, index.v) };
+}
+
 // 簡易パドルの推定（推定値）
-// 仮定：上の手がTグリップ（パドルの上端）を持ち、シャフトは上の手から下の手の方向へ伸びる
+// 仮定：上の手の持ち手がTグリップ（パドルの上端）、シャフトは上の手の持ち手から下の手の持ち手の方向へ伸びる
 // size：{ length, bladeLength, bladeWidth }（m）
 // side：そのストロークの漕ぐ側（"left"/"right"）。漕ぐ側の手＝下の手に固定し、ストロークの途中で左右が入れ替わらないようにする
 //       わからないとき（null）だけ、高いほうの手を上の手とみなす
-// 戻り値：{ grip, bladeStart, tip, widthDir, bladeWidth, side } または null（手が見えない・両手が近すぎる）
+// 戻り値：{ grip, lowerGrip, bladeStart, tip, widthDir, bladeWidth, side } または null（手が見えない・両手が近すぎる）
 export function estimatePaddle(body, size, side = null) {
   if (!body) return null;
-  const l = body[P.lWrist];
-  const r = body[P.rWrist];
-  if (l.v < 0.5 || r.v < 0.5) return null;
+  if (body[P.lWrist].v < 0.5 || body[P.rWrist].v < 0.5) return null;
+  const l = gripPoint(body, "left");
+  const r = gripPoint(body, "right");
 
   const bottom = side === "left" ? l : side === "right" ? r : l.y >= r.y ? r : l;
   const top = bottom === l ? r : l;
@@ -84,6 +94,7 @@ export function estimatePaddle(body, size, side = null) {
 
   return {
     grip: { x: top.x, y: top.y, z: top.z },
+    lowerGrip: { x: bottom.x, y: bottom.y, z: bottom.z },
     bladeStart: add(top, scale(dir, size.length - size.bladeLength)),
     tip: add(top, scale(dir, size.length)),
     widthDir: normalize(widthDir),

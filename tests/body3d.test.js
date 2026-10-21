@@ -25,8 +25,11 @@ test("3D：人が見つからないフレームは null のまま", () => {
   assert.ok(result[1]);
 });
 
+// 指の付け根が見えない骨格（持ち手は手首になる）
+const noFingers = (b) => b.map((p, i) => ([17, 18, 19, 20].includes(i) ? { ...p, v: 0 } : p));
+
 test("パドル：上の手がグリップ、全長・ブレード位置、漕ぐ側＝下の手", () => {
-  const body = seatedBody();
+  const body = noFingers(seatedBody());
   const size = { length: 1.245, bladeLength: 0.48, bladeWidth: 0.25 };
   const pad = estimatePaddle(body, size);
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -89,6 +92,22 @@ test("パドル：漕ぐ側を渡すと、上の手の高さが入れ替わっ�
   body[P.lWrist] = { x: 0.2, y: 0.9, z: 0.4, v: 1 }; // 左手（漕ぐ側＝下の手）のほうが高い瞬間
   body[P.rWrist] = { x: 0.1, y: 0.8, z: 0.3, v: 1 };
   const size = { length: 1.2, bladeLength: 0.48, bladeWidth: 0.25 };
-  assert.equal(estimatePaddle(body, size, "left").side, "left");
-  assert.equal(estimatePaddle(body, size).side, "right"); // 漕ぐ側がわからないときは高さで決める（従来どおり）
+  assert.equal(estimatePaddle(noFingers(body), size, "left").side, "left");
+  assert.equal(estimatePaddle(noFingers(body), size).side, "right"); // 漕ぐ側がわからないときは高さで決める（従来どおり）
+});
+
+test("パドルの持ち手：手首ではなく人差し指と小指の付け根の中点。見えないときは手首", async () => {
+  const { gripPoint } = await import("../js/body3d.js");
+  const body = Array.from({ length: 33 }, () => ({ x: 0, y: 1, z: 0, v: 1 }));
+  body[P.lWrist] = { x: 0.2, y: 0.9, z: 0.4, v: 1 };
+  body[17] = { x: 0.22, y: 0.82, z: 0.45, v: 1 }; // 手首を曲げて手が下がっている
+  body[19] = { x: 0.18, y: 0.84, z: 0.47, v: 1 };
+  const g = gripPoint(body, "left");
+  assert.ok(Math.abs(g.y - 0.83) < 1e-9 && Math.abs(g.z - 0.46) < 1e-9);
+  body[19] = { ...body[19], v: 0.2 };
+  assert.equal(gripPoint(body, "left").y, 0.9);
+  body[P.rWrist] = { x: -0.1, y: 1.2, z: 0.3, v: 1 };
+  body[19] = { ...body[19], v: 1 };
+  const pad = estimatePaddle(body, { length: 1.2, bladeLength: 0.48, bladeWidth: 0.25 }, "left");
+  assert.ok(Math.abs(pad.lowerGrip.y - 0.83) < 1e-9);
 });

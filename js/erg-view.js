@@ -14,6 +14,10 @@ const CHARTS = [
   { key: "hr", label: "心拍", unit: "bpm", format: whole },
   { key: "peakForce", label: "最大の力", unit: "", format: whole },
   { key: "driveLength", label: "引きの長さ", unit: "m", format: (v) => v.toFixed(2) },
+  { key: "driveTime", label: "引きの時間", unit: "秒", format: (v) => v.toFixed(2) },
+  { key: "recoveryTime", label: "戻しの時間", unit: "秒", format: (v) => v.toFixed(2) },
+  { key: "onset", label: "力の立ち上がり（キャッチから）", unit: "秒", format: (v) => v.toFixed(2) },
+  { key: "toPeak", label: "最大の力までの時間（キャッチから）", unit: "秒", format: (v) => v.toFixed(2) },
 ];
 
 // 折れ線グラフ。series：[{ ys, color, width }]（ys の長さは xs と同じ、値なしは null）

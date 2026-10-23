@@ -1,5 +1,5 @@
 // Concept2（PM5）のストロークデータ（CSV）を読み、まとめと改善点を出す
-// 対応：Concept2 Logbook のストロークデータ書き出し、ほかのアプリ（ErgData・RowsAndAll など）の CSV
+// 対応：tools/pm5/pm5_usb.py（USBで記録）の CSV、Concept2 Logbook のストロークデータ書き出し、ほかのアプリの CSV
 //   列は見出しの言葉から判定する（例："Watts"→ワット、"Stroke Rate"→ピッチ）。知らない列は無視する
 //   力の波形（フォースカーブ）は、1つのセルに数字が並んだ列があれば読む（Logbook の CSV には入っていない）
 // 改善点の目安（LIMITS）は、このサイトの仮の基準（裏付けのある数値ではない）
@@ -14,6 +14,8 @@ const COLUMNS = [
   ["driveLength", /drive ?length|ストローク長/, "引きの長さ"],
   ["driveTime", /drive ?time/, "引きの時間"],
   ["recoveryTime", /recovery/, "戻しの時間"],
+  ["onset", /onset|立ち上がり/, "力の立ち上がり"],
+  ["toPeak", /to ?peak|最大まで/, "最大までの時間"],
   ["watts", /watt|power|ワット/, "ワット"],
   ["spm", /stroke ?rate|cadence|spm|ピッチ/, "ピッチ"],
   ["hr", /heart|^hr|hrcur|心拍|bpm/, "心拍"],

@@ -48,3 +48,19 @@ test("時間の書式とそろえ直し", () => {
 test("見出しがない CSV は理由を返す", () => {
   assert.ok(parseErgCsv("a,b\n1,2").error);
 });
+
+test("pm5_usb.py の CSV：引き・戻し・力の立ち上がりの列を読む", () => {
+  const csv = [
+    "Number,Time (seconds),Distance (meters),Pace (seconds),Watts,Stroke Rate,Heart Rate,Drive Time (seconds),Recovery Time (seconds),Peak Force (lbs),Average Force (lbs),Force Onset (seconds),Time To Peak (seconds),Force Curve",
+    "1,0.05,4.8,119.7,204,52,140,0.4,0.71,110,77.6,0.062,0.234,0 0 9 22 35 47",
+  ].join("\n");
+  const s = parseErgCsv(csv).strokes[0];
+  assert.equal(s.time, 0.05);
+  assert.equal(s.driveTime, 0.4);
+  assert.equal(s.recoveryTime, 0.71);
+  assert.equal(s.onset, 0.062);
+  assert.equal(s.toPeak, 0.234);
+  assert.equal(s.peakForce, 110);
+  assert.equal(s.avgForce, 77.6);
+  assert.deepEqual(s.curve, [0, 0, 9, 22, 35, 47]);
+});

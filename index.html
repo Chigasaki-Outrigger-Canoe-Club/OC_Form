@@ -191,7 +191,7 @@
     <!-- Concept2（エルゴ） -->
     <section class="panel">
       <h2>Concept2（エルゴ）</h2>
-      <p class="muted">Concept2 Logbook（log.concept2.com）で記録を開き、ストロークデータをCSVで書き出して選んでください。ほかのアプリのCSVも、列の見出し（Watts・Stroke Rate・Heart Rate など）から読みます。</p>
+      <p class="muted">USBでつないだPM5の記録（<code>tools/pm5/pm5_usb.py</code> が作る <code>pm5_日時.csv</code>）を選んでください。Concept2 Logbook（log.concept2.com）から書き出したCSVも読めます。ほかのアプリのCSVも、列の見出し（Watts・Stroke Rate・Heart Rate など）から読みます。</p>
       <input type="file" id="ergFile" accept=".csv,text/csv">
       <p id="ergInfo" class="muted"></p>
       <div id="ergResult" hidden>

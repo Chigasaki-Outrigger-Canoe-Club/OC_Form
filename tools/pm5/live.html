@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PM5 リアルタイム</title>
+<style>
+  /* 色と余白はここでまとめて定義し、各所で使い回す */
+  :root { --bg: #f4f6f8; --panel: #fff; --text: #1c2430; --muted: #667085; --accent: #0b6e99; --border: #d7dde4; --drive: #e01e37; --gap: 12px; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12161c; --panel: #1b2129; --text: #e6e9ee; --muted: #98a2b3; --accent: #4fb3e0; --border: #2e3742; --drive: #ff4d5e; }
+  }
+  body { margin: 0; padding: var(--gap); background: var(--bg); color: var(--text); font-family: system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  h1 { font-size: 1.1rem; margin: 0 0 var(--gap); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: var(--gap); margin-bottom: var(--gap); }
+  .panel h2 { font-size: 0.95rem; margin: 0 0 6px; }
+  .stats { display: flex; flex-wrap: wrap; gap: var(--gap) 24px; }
+  .stat span { display: block; color: var(--muted); font-size: 0.8rem; }
+  .stat b { font-size: 1.8rem; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  canvas { width: 100%; height: 260px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<h1>PM5 リアルタイム <span id="status" class="muted">接続中…</span></h1>
+
+<div class="panel stats">
+  <div class="stat"><span>ペース /500m</span><b id="pace">--</b></div>
+  <div class="stat"><span>ワット</span><b id="watts">--</b></div>
+  <div class="stat"><span>ピッチ</span><b id="spm">--</b></div>
+  <div class="stat"><span>心拍</span><b id="hr">--</b></div>
+  <div class="stat"><span>ストローク</span><b id="count">0</b></div>
+</div>
+
+<div class="panel">
+  <h2>力の波形（キャッチからの時間）</h2>
+  <canvas id="curve"></canvas>
+  <p class="muted" id="curveInfo">太い線＝今の1本、細い線＝その前の5本。縦の点線＝力が立ち上がった時刻（最大の10%）と最大の時刻。</p>
+</div>
+
+<div class="panel">
+  <h2>力の時間変化（直近10秒）</h2>
+  <canvas id="timeline"></canvas>
+  <p class="muted">うすい赤＝引き（PM5 の判定）、縦線＝キャッチ。力を入れるタイミングとリズムを見られます。</p>
+</div>
+
+<div class="panel">
+  <h2>直近のストローク</h2>
+  <table>
+    <thead><tr><th>No.</th><th>ワット</th><th>ピッチ</th><th>引き(秒)</th><th>戻し(秒)</th><th>最大の力(lbs)</th><th>立ち上がり(秒)</th><th>最大まで(秒)</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+const RATE = 64;       // 力の波形の測定回数（1秒あたり）
+const WINDOW = 10;     // 時間変化のグラフに出す秒数
+const DRIVE = 2;       // 漕ぎの状態：2＝引き
+const el = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const clock = (sec) => `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, "0")}`;
+
+const points = [];     // { t, f }：直近の力（時間つき）
+const drives = [];     // [始まり, 終わり]：引きの区間
+let curve = [];        // 今の1本（キャッチから）
+const previous = [];   // その前の数本
+let driving = false;
+let now = 0;
+
+function onSample(s) {
+  now = s.time;
+  const isDrive = s.state === DRIVE;
+  if (isDrive && !driving) {           // キャッチ
+    if (curve.length) previous.push(curve);
+    if (previous.length > 5) previous.shift();
+    curve = [];
+    drives.push([s.time, null]);
+  }
+  if (!isDrive && driving && drives.length) drives[drives.length - 1][1] = s.time; // 引きの終わり
+  driving = isDrive;
+  const n = s.force.length;
+  s.force.forEach((f, i) => points.push({ t: s.time - (n - 1 - i) / RATE, f }));
+  if (!n && !isDrive) points.push({ t: s.time, f: 0 }); // 引き以外は力0
+  curve.push(...s.force);
+  while (points.length && points[0].t < now - WINDOW) points.shift();
+  while (drives.length && (drives[0][1] ?? now) < now - WINDOW) drives.shift();
+  el("watts").textContent = s.watts || "--";
+  el("spm").textContent = s.spm || "--";
+  el("hr").textContent = s.hr || "--";
+  el("pace").textContent = s.watts > 0 ? clock(500 * Math.cbrt(2.8 / s.watts)) : "--";
+}
+
+function onStroke(r) {
+  el("count").textContent = r["Number"];
+  const cells = ["Number", "Watts", "Stroke Rate", "Drive Time (seconds)", "Recovery Time (seconds)", "Peak Force (lbs)", "Force Onset (seconds)", "Time To Peak (seconds)"];
+  const tr = document.createElement("tr");
+  tr.innerHTML = cells.map((k) => `<td>${r[k] ?? ""}</td>`).join("");
+  el("rows").prepend(tr);
+  while (el("rows").children.length > 10) el("rows").lastChild.remove();
+}
+
+// キャンバスを画面の大きさに合わせ、描く準備をする。戻り値：{ ctx, w, h }
+function prepare(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+// 目盛りと軸の文字（縦：力、横：t0〜t1 秒を step ごと。label で表示を決める）
+function axes(ctx, w, h, x, y, t0, t1, step, maxF, label) {
+  ctx.font = "11px system-ui";
+  ctx.fillStyle = css("--muted");
+  ctx.strokeStyle = css("--border");
+  ctx.lineWidth = 1;
+  for (const v of [0, maxF / 2, maxF]) {
+    ctx.beginPath(); ctx.moveTo(x(t0), y(v)); ctx.lineTo(w, y(v)); ctx.stroke();
+    ctx.fillText(Math.round(v), 2, y(v) + 4);
+  }
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ctx.fillText(label(t), x(t) - 8, h - 2);
+}
+
+function line(ctx, list, x, y, color, width) {
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = "round";
+  ctx.beginPath();
+  list.forEach((p, i) => (i ? ctx.lineTo(x(p[0]), y(p[1])) : ctx.moveTo(x(p[0]), y(p[1]))));
+  ctx.stroke();
+}
+
+// 1本の波形の、力が立ち上がった時刻（最大の10%）と最大の時刻（秒）
+function timing(c) {
+  const peak = Math.max(...c);
+  return peak > 0 ? { onset: c.findIndex((f) => f >= peak * 0.1) / RATE, top: c.indexOf(peak) / RATE, peak } : null;
+}
+
+function drawCurve() {
+  const { ctx, w, h } = prepare(el("curve"));
+  const all = [...previous, curve];
+  const maxT = Math.max(0.8, ...all.map((c) => c.length / RATE));
+  const maxF = Math.max(50, ...all.flat());
+  const x = (t) => 36 + (t / maxT) * (w - 44);
+  const y = (f) => h - 18 - (f / maxF) * (h - 28);
+  axes(ctx, w, h, x, y, 0, maxT, 0.2, maxF, (t) => `${t.toFixed(1)}s`);
+  const pts = (c) => c.map((f, i) => [i / RATE, f]);
+  previous.forEach((c) => line(ctx, pts(c), x, y, css("--border"), 1.5));
+  const last = curve.length > 3 ? curve : previous[previous.length - 1];
+  if (!last) return;
+  line(ctx, pts(last), x, y, css("--accent"), 3);
+  const tm = timing(last);
+  if (!tm) return;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = css("--muted");
+  for (const t of [tm.onset, tm.top]) { ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), h - 18); ctx.stroke(); }
+  ctx.setLineDash([]);
+  el("curveInfo").textContent = `力の立ち上がり ${tm.onset.toFixed(2)}秒・最大 ${tm.peak}lbs（キャッチから ${tm.top.toFixed(2)}秒）。太い線＝今の1本、細い線＝その前の5本。`;
+}
+
+function drawTimeline() {
+  const { ctx, w, h } = prepare(el("timeline"));
+  const t0 = now - WINDOW;
+  const maxF = Math.max(50, ...points.map((p) => p.f));
+  const x = (t) => 36 + ((t - t0) / WINDOW) * (w - 44);
+  const y = (f) => h - 18 - (f / maxF) * (h - 28);
+  ctx.fillStyle = css("--drive") + "22"; // うすい赤
+  for (const [a, b] of drives) ctx.fillRect(x(Math.max(a, t0)), 4, x(b ?? now) - x(Math.max(a, t0)), h - 22);
+  axes(ctx, w, h, x, y, t0, now, 2, maxF, (t) => `${Math.round(t - now)}s`);
+  ctx.strokeStyle = css("--drive");
+  for (const [a] of drives) if (a >= t0) { ctx.beginPath(); ctx.moveTo(x(a), 4); ctx.lineTo(x(a), h - 18); ctx.stroke(); }
+  line(ctx, points.map((p) => [p.t, p.f]), x, y, css("--accent"), 2);
+}
+
+function frame() {
+  drawCurve();
+  drawTimeline();
+  requestAnimationFrame(frame);
+}
+
+const events = new EventSource("/events");
+events.onopen = () => (el("status").textContent = "受信中");
+events.onerror = () => (el("status").textContent = "つながっていません（pm5_usb.py が動いているか確認）");
+events.onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  if (m.type === "sample") onSample(m); else onStroke(m);
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

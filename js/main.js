@@ -3,6 +3,7 @@
 import { timeToFrame, frameToTime, frameCount, clampFrame, formatTime } from "./frame-math.js";
 import { readVideoInfo } from "./mp4-info.js";
 import { analyzeVideo } from "./pose.js";
+import { setupErg } from "./erg-view.js";
 import { P } from "./angles.js";
 import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
@@ -220,7 +221,7 @@ function selectView(view) {
   el("fpsBox").hidden = !d || d.fpsSource !== "manual";
   showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
     : d.url ? "読み込み中…"
-    : `このデータは動画を保存していません（${d.name}）。「3Dモデル」で表示できます。同じ動画を選ぶと動画も表示されます`);
+    : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
   renderStrokes();
   updateDisplay();
 }
@@ -292,17 +293,21 @@ document.querySelectorAll(".tab[data-display]").forEach((tab) => {
   tab.addEventListener("click", () => showDisplay(tab.dataset.display));
 });
 
+// video＝動画だけ、model＝平均の漕ぎ（統合モデルの繰り返し）、compare＝動画と3D（同じコマ）を並べる
+let display = "video";
 function showDisplay(name) {
+  display = name;
   document.querySelectorAll(".tab[data-display]").forEach((t) => t.classList.toggle("active", t.dataset.display === name));
-  el("videoBox").hidden = name !== "video";
-  el("modelBox").hidden = name !== "model";
+  el("videoBox").hidden = name === "model";
+  el("modelBox").hidden = name === "video";
+  el("displays").classList.toggle("compare", name === "compare");
   updateDisplay();
 }
 
 // ---- 代表ストロークの繰り返し再生（動画とは別の時計で動く） ----
 const loop = { phase: 0, playing: true, running: false, last: 0 };
 const loopSide = () => document.querySelector("input[name=loopSide]:checked").value;
-const loopVisible = () => !el("modelBox").hidden && document.querySelector("input[name=mode3d]:checked").value === "fused";
+const loopVisible = () => display === "model";
 
 function startLoop() {
   if (loop.running || !loop.playing || !loopVisible()) return;
@@ -346,7 +351,6 @@ import("./view3d.js")
     el("view3d").replaceWith(note);
   });
 document.querySelectorAll("[data-view3d]").forEach((b) => b.addEventListener("click", () => view3d?.setFixedView(b.dataset.view3d)));
-document.querySelectorAll("input[name=mode3d]").forEach((r) => r.addEventListener("change", updateDisplay));
 el("showTrails").addEventListener("change", updateDisplay);
 Object.keys(VIEW_LABELS).forEach((v) => el(`fuse-${v}`).addEventListener("change", dataChanged));
 
@@ -366,8 +370,10 @@ async function analyzeCurrent(label) {
   const d = data();
   if (!video.videoWidth) { showStatus(playbackProblem()); runStatus(`${label}：動画を表示できないため解析できません`); return false; }
   stopRequested = false;
-  const { frames, world, spine } = await analyzeVideo(video, fps(), (done, total) => {
-    runStatus(`${label}… ${done} / ${total} フレーム`);
+  const started = performance.now();
+  const { frames, world, spine } = await analyzeVideo(video, d.file, fps(), (done, total, method) => {
+    const sec = (performance.now() - started) / 1000;
+    runStatus(`${label}… ${done} / ${total} フレーム（${method}・${sec.toFixed(0)}秒、1コマ ${(sec / done).toFixed(2)}秒）`);
   }, () => stopRequested);
   if (stopRequested) return false;
   d.pose = frames;
@@ -418,7 +424,6 @@ el("runAll").addEventListener("click", async () => {
   if (!fused?.right && !fused?.left) {
     return runStatus("2/3 3Dモデルを作れませんでした（ストロークを検出できていない可能性）。下のストローク表を確認してください。保存はしていません。");
   }
-  document.querySelector("input[name=mode3d][value=fused]").checked = true;
 
   // 3. 保存
   runStatus("3/3 保存中…");
@@ -840,14 +845,13 @@ overlay.addEventListener("pointerup", () => (dragging = null));
 // 3Dビューに渡す内容（現在の骨格・パドル・軌跡）
 function update3d(d, frame) {
   const size = paddleSize();
-  const mode = document.querySelector("input[name=mode3d]:checked").value;
   let body = null;
   let spine = null;
   let range = [];  // 軌跡を描く区間（ストロークの始まり〜今）
   let drive = [];  // その区間のうち力を入れているところ
   let side = null; // 漕ぐ側（パドルの向きを固定するため）
 
-  if (mode === "fused") {
+  if (display === "model") {
     // 代表ストローク（平均）を、平均ストローク時間で繰り返し再生する
     side = loopSide();
     const rep = fused?.[side];
@@ -874,7 +878,7 @@ function update3d(d, frame) {
       range = d.body.slice(start, frame + 1);
       drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame), side)?.mask.slice(0, range.length) ?? [];
     }
-    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）だけの推定` : "";
+    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定` : "";
   }
 
   const trails = [];
@@ -902,5 +906,6 @@ function updateDisplay() {
   startLoop();
 }
 
+setupErg();
 renderAthletes();
 selectView("left");

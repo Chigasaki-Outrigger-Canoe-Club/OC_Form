@@ -5,6 +5,7 @@
 
 import { frameCount, frameToTime } from "./frame-math.js";
 import { backProfile } from "./spine.js";
+import { decodeFrames } from "./decode.js";
 
 const VERSION = "0.10.14";
 const LIB = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}`;
@@ -41,36 +42,53 @@ function seekTo(video, time) {
 
 const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
 
-// 動画の全フレームを解析。戻り値：{ frames, world, spine }（人が見つからないフレームは null）
+// 動画の全フレームを解析。戻り値：{ frames, world, spine, method }（人が見つからないフレームは null）
 //   frames：画像上のピクセル座標、world：MediaPipe の3D推定座標（腰の中心が原点、およそメートル）
 //   spine：シルエットから測った背中の膨らみ（spine.js の backProfile。測れないフレームは null）
-export async function analyzeVideo(video, fps, onProgress, isStopped) {
+//   method："順番に読む"（速い）または "頭出し"（順番に読めない動画のとき）
+// file：動画ファイル（順番に読むために使う）
+export async function analyzeVideo(video, file, fps, onProgress, isStopped) {
   const model = await load();
   const total = frameCount(video.duration, fps);
   const w = video.videoWidth;
   const h = video.videoHeight;
-  const frames = [];
-  const world = [];
-  const spine = [];
+  let out;
+  const detect = (source) => {
+    clock += 1000 / fps;
+    addResult(out, model.detectForVideo(source, clock), w, h);
+    onProgress(Math.min(out.frames.length, total), total, out.method);
+  };
   video.pause();
 
-  for (let f = 0; f < total && !isStopped(); f++) {
-    await seekTo(video, frameToTime(f, fps));
-    clock += 1000 / fps;
-    const result = model.detectForVideo(video, clock);
-    const person = result.landmarks[0];
-    const person3d = result.worldLandmarks[0];
-    frames.push(person
-      ? person.map((p) => ({ x: round(p.x * w, 1), y: round(p.y * h, 1), v: round(p.visibility, 3), src: "est" }))
-      : null);
-    world.push(person3d
-      ? person3d.map((p) => ({ x: round(p.x, 4), y: round(p.y, 4), z: round(p.z, 4), v: round(p.visibility, 3) }))
-      : null);
-    spine.push(person ? measureSpine(result.segmentationMasks?.[0], person) : null);
-    result.segmentationMasks?.forEach((m) => m.close()); // マスクのメモリを解放
-    onProgress(f + 1, total);
+  out = { frames: [], world: [], spine: [], method: "順番に読む" };
+  const fast = await decodeFrames(file, detect, () => isStopped() || out.frames.length >= total).catch(() => false);
+  if (!fast) {
+    out = { frames: [], world: [], spine: [], method: "頭出し" };
+    for (let f = 0; f < total && !isStopped(); f++) {
+      await seekTo(video, frameToTime(f, fps));
+      detect(video);
+    }
   }
-  return { frames, world, spine };
+  // フレーム数を動画の長さに合わせる（足りないところは「人が見つからない」扱い）
+  for (const list of [out.frames, out.world, out.spine]) {
+    list.length = Math.min(list.length, total);
+    while (list.length < total && !isStopped()) list.push(null);
+  }
+  return out;
+}
+
+// 1フレーム分の結果を out に追加する
+function addResult(out, result, w, h) {
+  const person = result.landmarks[0];
+  const person3d = result.worldLandmarks[0];
+  out.frames.push(person
+    ? person.map((p) => ({ x: round(p.x * w, 1), y: round(p.y * h, 1), v: round(p.visibility, 3), src: "est" }))
+    : null);
+  out.world.push(person3d
+    ? person3d.map((p) => ({ x: round(p.x, 4), y: round(p.y, 4), z: round(p.z, 4), v: round(p.visibility, 3) }))
+    : null);
+  out.spine.push(person ? measureSpine(result.segmentationMasks?.[0], person) : null);
+  result.segmentationMasks?.forEach((m) => m.close()); // マスクのメモリを解放
 }
 
 // シルエットから背中の膨らみを測る。マスクがない・読めないときは null

@@ -82,9 +82,11 @@
 
       <div class="row">
         <button class="tab active" data-display="video">動画</button>
-        <button class="tab" data-display="model">3Dモデル</button>
+        <button class="tab" data-display="model">3D：平均の漕ぎ</button>
+        <button class="tab" data-display="compare">動画と3Dを並べる</button>
       </div>
 
+      <div id="displays">
       <div id="videoBox" class="stage">
         <video id="video" playsinline muted></video>
         <canvas id="overlay"></canvas>
@@ -93,8 +95,6 @@
 
       <div id="modelBox" hidden>
         <div class="row">
-          <label><input type="radio" name="mode3d" value="fused" checked> 全方向の統合モデル</label>
-          <label><input type="radio" name="mode3d" value="single"> この動画だけ</label>
           <button class="btn small" data-view3d="front">正面</button>
           <button class="btn small" data-view3d="left">左側面</button>
           <button class="btn small" data-view3d="right">右側面</button>
@@ -129,8 +129,10 @@
           <p id="fusionInfo" class="muted"></p>
           <p class="muted">操作：ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
           <p class="muted">統合モデル：各動画のストロークを0〜100%にそろえて漕ぐ側ごとに平均し、方向ごとに「カメラから見やすい軸」を重く使って合わせた推定です（3本は同時撮影ではないため、特定の1ストロークの再現ではありません）。再生位置の位相に合わせて動きます。おかしい方向があればチェックを外して除けます。</p>
-          <p class="muted">「この動画だけ」：1台のカメラからの推定で、奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
+          <p class="muted">「動画と3Dを並べる」：今の動画の同じコマを3Dにしたもの。1台のカメラからの推定で、奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
         </details>
+      </div>
+
       </div>
 
       <div id="videoControls">
@@ -184,6 +186,23 @@
         </ul>
       </details>
       <p class="muted">統合3Dモデル（推定）から計算しています。「改善候補」＝目安から外れた項目、「左右差」＝目安の範囲内でも右漕ぎと左漕ぎで差が大きい項目です。各項目の「根拠」に、目安のもとにした資料を示しています。アウトリガーの研究はまだ少なく、確定した「お手本」の数値はありません。ボートの資料は考え方（体幹の使い方）だけを参考にしていて、競技も動きも違います（値は <code>js/feedback.js</code> の LIMITS で変更できます）。気になる項目は動画で確認してください。</p>
+    </section>
+
+    <!-- Concept2（エルゴ） -->
+    <section class="panel">
+      <h2>Concept2（エルゴ）</h2>
+      <p class="muted">Concept2 Logbook（log.concept2.com）で記録を開き、ストロークデータをCSVで書き出して選んでください。ほかのアプリのCSVも、列の見出し（Watts・Stroke Rate・Heart Rate など）から読みます。</p>
+      <input type="file" id="ergFile" accept=".csv,text/csv">
+      <p id="ergInfo" class="muted"></p>
+      <div id="ergResult" hidden>
+        <div id="ergSummary" class="erg-stats"></div>
+        <div id="ergCharts" class="erg-charts"></div>
+        <table class="table">
+          <thead><tr><th>項目</th><th>値</th><th>コメント</th></tr></thead>
+          <tbody id="ergFeedback"></tbody>
+        </table>
+        <p class="muted">グラフの細い線＝1ストロークごと、太い線＝前後5本の平均。最初の10秒（漕ぎ出し）は計算から除いています。改善点の目安はこのサイトの仮の基準です（値は <code>js/erg.js</code> の LIMITS で変更できます）。ピッチのコメントだけ、OCエルゴの研究をもとにしています。</p>
+      </div>
     </section>
 
     <!-- 4. 過去データ読み出し -->

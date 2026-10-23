@@ -29,6 +29,7 @@ import queue
 import sys
 import threading
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -251,6 +252,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"記録を始めました。ブラウザで http://localhost:{args.port} を開くと波形が見られます（終了は Ctrl+C）。")
+    webbrowser.open(f"http://localhost:{args.port}")
 
     with open(f"{name}.csv", "w", newline="", encoding="utf-8") as sf, open(f"{name}_raw.csv", "w", newline="", encoding="utf-8") as rf:
         strokes = csv.DictWriter(sf, fieldnames=STROKE_HEADER)

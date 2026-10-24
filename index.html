@@ -15,7 +15,11 @@
   <main class="layout">
     <!-- 1. 選手情報（動画を読み込む前に選ぶ） -->
     <section class="panel">
-      <h2>選手</h2>
+      <div class="row">
+        <button class="tab active" data-pane="athletePane">選手</button>
+        <button class="tab" data-pane="historyPane">過去データ <span id="sessionCount"></span></button>
+      </div>
+      <div id="athletePane">
       <div class="row">
         <select id="athleteSelect" class="btn"></select>
         <button class="btn" id="addAthlete">＋追加</button>
@@ -29,7 +33,32 @@
         <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
         <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
-      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内。「解析 → 3Dモデル → 保存」でGitHubにも保存され、スマホなどほかの端末でも使えます）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
+      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内。GitHubのトークンを入れていればGitHubにも自動で保存され、スマホなどほかの端末でも使えます。「実行」で保存する解析結果にも入ります）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
+      </div>
+
+      <!-- 過去データ（選手の欄でタブを切り替えて選ぶ） -->
+      <div id="historyPane" hidden>
+      <p class="muted">表示中：<span id="sessionLabel">新しいデータ（未保存）</span></p>
+      <div class="scroll">
+        <table class="table">
+          <thead><tr><th>練習日</th><th>メモ</th><th></th></tr></thead>
+          <tbody id="sessionList"></tbody>
+        </table>
+      </div>
+      <p class="muted">このブラウザに保存したデータ。行を押すとそのデータを表示します。<span id="sessionNote"></span></p>
+      <div class="row">
+        <label class="btn">
+          ファイルから読み込む
+          <input type="file" id="importSession" accept=".json,application/json" hidden>
+        </label>
+        <button class="btn" id="ghList">GitHubの一覧を更新</button>
+        <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
+        <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
+      </div>
+      <p class="muted">GitHubに保存したデータ（スマホでも見られます）：</p>
+      <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
+      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。GitHubのデータはトークンなしで読めます（スマホ可）。<span id="storageUsage"></span></p>
+      </div>
     </section>
 
     <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->
@@ -56,7 +85,6 @@
       <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。</p>
       <details class="sub">
         <summary>保存の設定</summary>
-        <label><input type="checkbox" id="saveVideo"> 動画も保存する（このブラウザ内だけ。1本で約60〜70MB）</label><br>
         <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデルとストロークの区切りだけ）</label>
         <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）と選手データだけで、動画は送りません。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
@@ -206,30 +234,6 @@
       </div>
     </section>
 
-    <!-- 4. 過去データ読み出し -->
-    <section class="panel">
-      <h2>過去データ読み出し <span id="sessionCount" class="muted"></span></h2>
-      <p class="muted">表示中：<span id="sessionLabel">新しいデータ（未保存）</span></p>
-      <div class="scroll">
-        <table class="table">
-          <thead><tr><th>練習日</th><th>メモ</th><th></th></tr></thead>
-          <tbody id="sessionList"></tbody>
-        </table>
-      </div>
-      <p class="muted">行を押すとそのデータを表示します。<span id="sessionNote"></span></p>
-      <div class="row">
-        <label class="btn">
-          ファイルから読み込む
-          <input type="file" id="importSession" accept=".json,application/json" hidden>
-        </label>
-        <button class="btn" id="ghList">GitHubのデータを見る</button>
-        <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
-        <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
-      </div>
-      <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
-      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。GitHubのデータはトークンなしで読めます（スマホ可）。<span id="storageUsage"></span></p>
-    </section>
-
     <!-- 5. ストローク（まとめて実行で自動検出。必要なときだけ修正） -->
     <section class="panel">
       <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
@@ -249,6 +253,12 @@
     </section>
   </main>
 
-  <script type="module" src="js/main.js"></script>
+  <!-- 読み込みに失敗したとき（更新の直後に古いファイルが混ざったときなど）は、再読み込みを案内する -->
+  <script type="module">
+    import("./js/main.js").catch((err) => {
+      const note = Object.assign(document.createElement("p"), { className: "flag", textContent: `サイトの読み込みに失敗しました。再読み込みしてください（PCは Ctrl+Shift+R、スマホは再読み込み）。（${err.message}）` });
+      document.body.prepend(note);
+    });
+  </script>
 </body>
 </html>

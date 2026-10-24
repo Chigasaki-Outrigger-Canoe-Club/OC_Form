@@ -288,6 +288,14 @@ function playbackProblem() {
 video.addEventListener("loadeddata", () => showStatus(video.videoWidth ? "" : playbackProblem()));
 video.addEventListener("error", () => data()?.url && showStatus(playbackProblem()));
 
+// ================= 選手の欄のタブ（選手／過去データ） =================
+document.querySelectorAll(".tab[data-pane]").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tab[data-pane]").forEach((t) => {
+    t.classList.toggle("active", t === tab);
+    el(t.dataset.pane).hidden = t !== tab;
+  });
+}));
+
 // ================= 動画と3Dモデルの切り替え =================
 document.querySelectorAll(".tab[data-display]").forEach((tab) => {
   tab.addEventListener("click", () => showDisplay(tab.dataset.display));
@@ -497,9 +505,7 @@ async function saveCurrentSession() {
   const a = athletes.currentAthlete(store);
   if (!a) { el("sessionNote").textContent = "選手が選ばれていないため保存できません"; return false; }
   const session = sessions.buildSession({ id: sessionId, athlete: a, date: sessionDate ?? today(), memo: el("sessionMemo").value, views, model: fused });
-  const videos = el("saveVideo").checked
-    ? Object.fromEntries(Object.entries(views).filter(([, d]) => d.file).map(([v, d]) => [v, d.file]))
-    : {};
+  const videos = {}; // 動画は保存しない（大きいため。解析結果だけを保存する）
   try {
     sessions.requestPersist();
     await sessions.saveSession(session, videos);

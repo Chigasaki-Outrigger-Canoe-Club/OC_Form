@@ -20,7 +20,8 @@ import { keyFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
 import { detectDrive, refineToCatch } from "./drive.js";
-import { buildFeedback } from "./feedback.js";
+import { buildFeedback, feedbackRows } from "./feedback.js";
+import { form2d } from "./form2d.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
 import * as github from "./github.js";
@@ -509,16 +510,28 @@ function dataChanged() {
   const roles = (side) => sourceSummary(fused?.[side]).map((s) => `${s.part}＝${VIEW_LABELS[s.main]}（${s.score.toFixed(2)}）`).join("・");
   el("fusionInfo").textContent = fused ? `統合に使ったストローク… ${describe("right")}／${describe("left")}` : "";
   el("fusionRoles").textContent = fused ? ["right", "left"].filter((s) => fused[s]?.sources).map((s) => `${SIDE_LABEL[s]}：${roles(s)}`).join("／") : "";
-  renderFeedback(info);
+  renderFeedback(feedbackFor(prepared, info));
   updateDisplay();
 }
 
-function renderFeedback(usedViews) {
+// フォームの数値：動画の画面上の点（2D）から測る（方針A）。2Dの骨格がない過去データだけ、保存した3Dモデルから（参考）
+// リズムは手の高さで区切った横の動画を優先（後ろの肩の傾きの区切りは補助なので使わない）
+function feedbackFor(prepared, info) {
+  const with2d = prepared.filter((d) => d.pose).map((d) => ({ name: d.name, fps: d.fps, strokes: d.strokes, pose: processed2d(d), spine: d.spine, shaft: d.shaftShown }));
+  const handSplit = info.filter((v) => !v.strokes.some((s) => s.src === "tilt"));
+  const sides = handSplit.filter((v) => v.name === "left" || v.name === "right");
+  const rhythm = sides.length ? sides : handSplit;
+  el("feedbackSource").textContent = with2d.length ? "動画の画面上の点（2D）から測っています。" : fused ? "2Dの骨格がないデータのため、3Dモデル（推定・参考）から計算しています。" : "";
+  if (with2d.length) return feedbackRows(form2d(with2d, Number(athletes.currentAthlete(store)?.values?.height) || null), rhythm);
+  return fused ? buildFeedback(fused, rhythm) : null;
+}
+
+function renderFeedback(rows) {
   const body = el("feedbackList");
   body.innerHTML = "";
-  el("feedbackEmpty").hidden = Boolean(fused);
-  if (!fused) return;
-  for (const row of buildFeedback(fused, usedViews)) {
+  el("feedbackEmpty").hidden = Boolean(rows);
+  if (!rows) return;
+  for (const row of rows) {
     const value = Object.entries(row.values)
       .filter(([, v]) => v != null)
       .map(([side, v]) => `${SIDE_LABEL[side]} ${v.toFixed(1)}${row.unit}`)

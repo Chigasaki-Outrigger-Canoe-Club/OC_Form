@@ -107,6 +107,7 @@ export function sideMetrics(frames, side, spine = null, views = []) {
   const shoulderY = (f) => mid(f[P.lShoulder], f[P.rShoulder]).y;
 
   return {
+    catchLean: trunkPitch(at(catchIndex)),
     catchReach: cm(Math.max(...valid.map((f) => f[b.w].z - hipZ(f)))),
     exitPosition: cm(at(exitIndex)[b.w].z - hipZ(at(exitIndex))),
     topHand: cm(at(catchIndex)[top].y - shoulderY(at(catchIndex))),
@@ -124,24 +125,28 @@ export function sideMetrics(frames, side, spine = null, views = []) {
 // ---- 項目の定義 ----
 // better："high"＝大きいほうがよい、"low"＝小さいほうがよい、null＝方向なし（左右差だけ見る）
 // bad：目安から外れたら true、lr：左右差として挙げる差、need：評価できない理由（値が null のとき）
+const SIDE_NEED = "カメラ側を漕いだ横からの動画が必要です（右漕ぎ＝右から、左漕ぎ＝左から）";
+const FB_NEED = "前か後ろからの動画が必要です";
 const ITEMS = [
-  { key: "catchReach", basis: ["gomory", "guide"], label: "キャッチのリーチ（下の手が腰より前に出る距離）", unit: "cm", better: "high", lr: 5,
+  { key: "catchLean", basis: ["draft"], label: "キャッチでの前傾（体幹、鉛直から）", unit: "°", better: null, lr: 3, need: SIDE_NEED,
+    weak: "キャッチでの前傾の深さが左右で違います。股関節から同じ深さまで倒してください。" },
+  { key: "catchReach", basis: ["gomory", "guide"], need: SIDE_NEED, label: "キャッチのリーチ（下の手が腰より前に出る距離）", unit: "cm", better: "high", lr: 5,
     weak: "キャッチで漕ぐ側の肩をもう一段前に出し、股関節から前に倒してリーチを伸ばしてください。" },
-  { key: "exitPosition", basis: ["guide"], label: "抜きの位置（ドライブの終わり、腰より前が正）", unit: "cm", better: null, lr: 5,
+  { key: "exitPosition", need: SIDE_NEED, basis: ["guide"], label: "抜きの位置（ドライブの終わり、腰より前が正）", unit: "cm", better: null, lr: 5,
     bad: (v) => v < LIMITS.exitBehind || v > LIMITS.exitAhead,
     comment: (v) => (v < LIMITS.exitBehind
       ? "腰より後ろまで引いています。ブレードが腰の横に来たら抜き、すぐ次のキャッチへ移ってください（後ろまで引くと艇を沈める力になりやすい）。"
       : "早く抜けていて引きが短めです。腰の横まで引き切ってから抜いてください。"),
     weak: "抜く位置が左右でそろうよう、抜きのタイミングを合わせてください。" },
-  { key: "topHand", basis: ["guide"], label: "キャッチでの上の手の高さ（肩から）", unit: "cm", better: "high", lr: 4,
+  { key: "topHand", need: SIDE_NEED, basis: ["guide"], label: "キャッチでの上の手の高さ（肩から）", unit: "cm", better: "high", lr: 4,
     bad: (v) => v < LIMITS.topHand,
     comment: () => "キャッチで上の手が低いです。上の手を目の高さ付近まで上げ、下の手の真上に重ねてブレードを立てて入れてください。",
     weak: "キャッチで上の手をもう少し高く保ち、パドルを立ててください。" },
-  { key: "trunkRange", basis: ["sealey"], label: "体幹の前傾〜起こしの幅", unit: "°", better: "high", lr: 3,
+  { key: "trunkRange", need: SIDE_NEED, basis: ["sealey"], label: "体幹の前傾〜起こしの幅", unit: "°", better: "high", lr: 3,
     bad: (v) => v < LIMITS.trunkRange,
     comment: () => "体幹の動きが小さく、腕で引いている可能性があります。キャッチで股関節から前に倒し、ドライブで体幹を起こす力で引いてください。",
     weak: "体幹の前傾〜起こしを大きく使えていません。股関節からの倒し込みを左右でそろえてください。" },
-  { key: "rotationRange", basis: ["sealey", "guide"], label: "上体の回旋（肩と骨盤のねじれ）の幅", unit: "°", better: "high", lr: 3,
+  { key: "rotationRange", need: "上体のねじれは奥行き（3D）が必要なため、動画の画面上の点（2D）では測りません", basis: ["sealey", "guide"], label: "上体の回旋（肩と骨盤のねじれ）の幅", unit: "°", better: "high", lr: 3,
     bad: (v) => v < LIMITS.rotationRange,
     comment: () => "上体のねじれが小さいです。キャッチで漕ぐ側の肩を前に出してねじり、ねじりを戻す力で引いてください。",
     weak: "ねじりが小さくなっています。キャッチで漕ぐ側の肩を前に出す意識を強めてください。" },
@@ -155,7 +160,7 @@ const ITEMS = [
     bad: (v) => v > LIMITS.catchFlexion,
     comment: () => "キャッチで背中が丸まっています。背中を丸めて手を伸ばすのではなく、背筋を伸ばしたまま股関節から倒してください（ボートでもキャッチは股関節からの前傾が基本。OCではそこに漕ぐ側の肩を前へ出すねじりを加えます）。",
     weak: "キャッチで背中が丸まりやすくなっています。股関節から倒す意識を強めてください。" },
-  { key: "bottomElbow", basis: ["guide"], label: "ドライブ中盤の下の手の肘", unit: "°", better: "high", lr: 5,
+  { key: "bottomElbow", need: SIDE_NEED, basis: ["guide"], label: "ドライブ中盤の下の手の肘", unit: "°", better: "high", lr: 5,
     bad: (v) => v < LIMITS.bottomElbow,
     comment: () => "下の手の肘が曲がり、腕で引いています。下の腕はほぼ伸ばしたまま、体幹のねじり戻しと前傾の起こしで引いてください。",
     weak: "下の手の肘が曲がりやすくなっています。下の腕を伸ばしたまま引く意識を強めてください。" },
@@ -164,10 +169,16 @@ const ITEMS = [
     bad: (v) => v > LIMITS.shaftTilt,
     comment: () => "シャフトが左右に傾いています。上の手を下の手の真上に重ね、パドルを立てて引いてください。",
     weak: "シャフトが傾きやすくなっています。上の手を艇の外側へ押し出して、パドルを立ててください。" },
-  { key: "driveRatio", basis: ["sealey"], label: "ドライブ（力を入れている時間）の割合", unit: "%", better: null, lr: 5,
+  { key: "shoulderTilt", basis: ["draft"], label: "ドライブ中の肩の傾き（漕ぐ側の肩が下がる角度）", unit: "°", better: null, lr: 3, need: FB_NEED,
+    weak: "ドライブ中の肩の傾きが左右で違います。漕ぐ側の肩の下げ方（体の沈め方）をそろえてください。" },
+  { key: "hipTilt", basis: ["draft"], label: "ドライブ中の骨盤の傾き（漕ぐ側が下がる角度）", unit: "°", better: null, lr: 3, need: "後ろからの動画が必要です",
+    weak: "骨盤の傾きが左右で違います。座面に左右均等に座り、片側の骨盤だけが沈まないようにしてください。" },
+  { key: "trunkSide", basis: ["draft"], label: "ドライブ中の体幹の左右の傾き（漕ぐ側へ）", unit: "°", better: null, lr: 3, need: FB_NEED,
+    weak: "体幹の左右の傾きが左右で違います。漕ぐ側へ倒れ込みすぎていないか、動画で確認してください。" },
+  { key: "driveRatio", need: SIDE_NEED, basis: ["sealey"], label: "ドライブ（力を入れている時間）の割合", unit: "%", better: null, lr: 5,
     note: "研究の「推進＝約56%」はブレードが水中にある時間。この値は手が後ろへ速く動いている区間なので定義が違い、直接は比べられません。",
     weak: "ドライブと戻しの時間配分が左右で違います。戻しを急がず、同じリズムで漕いでください。" },
-  { key: "pathNoise", basis: ["gomory"], label: "ドライブ中の下の手の軌道の乱れ", unit: "mm", better: "low", lr: 3,
+  { key: "pathNoise", need: SIDE_NEED, basis: ["gomory"], label: "ドライブ中の下の手の軌道の乱れ", unit: "mm", better: "low", lr: 3,
     weak: "ドライブ中の手の軌道が乱れています。キャッチからきれいな弧で引き切れているか確認してください（乱れ＝力が抜けている・ブレードがぶれている可能性）。" },
 ];
 
@@ -191,10 +202,13 @@ export function rhythmDetail(views) {
   const all = [];
   const lines = [];
   for (const v of views) {
-    const list = v.strokes.slice(0, -1).map((s, n) => ({
+    const raw = v.strokes.slice(0, -1).map((s, n) => ({
       no: n + 1, side: s.side, sec: (v.strokes[n + 1].frame - s.frame) / v.fps,
       change: n > 0 && s.side && v.strokes[n - 1].side && s.side !== v.strokes[n - 1].side,
     }));
+    // 中央値の2倍を超える区間は休み・区切りの見落としとして除く（ストロークではない）
+    const rawMedian = median(raw.map((x) => x.sec));
+    const list = raw.filter((x) => x.sec <= rawMedian * 2);
     if (list.length < 3) continue;
     all.push(...list);
     const secs = list.map((x) => x.sec);
@@ -243,6 +257,11 @@ export function buildFeedback(fused, views) {
     right: fused.right && sideMetrics(fused.right.frames, "right", fused.right.spine, fused.right.views),
     left: fused.left && sideMetrics(fused.left.frames, "left", fused.left.spine, fused.left.views),
   };
+  return feedbackRows(metrics, views);
+}
+
+// 指標 { right, left }（sideMetrics や form2d の結果）とストロークから、コメントの一覧を作る
+export function feedbackRows(metrics, views) {
   const rows = ITEMS.map((item) => {
     const values = { right: metrics.right?.[item.key] ?? null, left: metrics.left?.[item.key] ?? null };
     const present = Object.entries(values).filter(([, v]) => v != null);

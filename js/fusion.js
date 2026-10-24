@@ -9,12 +9,14 @@
 //      見やすさ：カメラの奥行き方向の軸は低く（1台のカメラでは奥行きの精度が低いため）、
 //      画面に平行な軸は高くする。 reliability(軸) = 1 − 0.8 ×（カメラ方向の成分）²
 //      さらに「部位ごとの得意・不得意」（jointWeights）を掛ける。向きはカメラの方向から自動で決める
-//   4. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
+//   4. 位相に沿って軽くならす（平均しても残る細かいぎざぎざを取る）
+//   5. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
 // 結果は「同じ漕ぎ方を繰り返している」と仮定した推定値で、特定の1ストロークの再現ではない。
 
 import { P } from "./angles.js";
 import { cameraDirection, median } from "./body3d.js";
 import { setFeet } from "./legs.js";
+import { gaussian } from "./smooth.js";
 
 export const PHASES = 101; // 0%, 1%, …, 100%
 const DEPTH_PENALTY = 0.8;
@@ -26,6 +28,18 @@ function torso(f) {
   const s = { x: (f[P.lShoulder].x + f[P.rShoulder].x) / 2, y: (f[P.lShoulder].y + f[P.rShoulder].y) / 2, z: (f[P.lShoulder].z + f[P.rShoulder].z) / 2 };
   const h = { x: (f[P.lHip].x + f[P.rHip].x) / 2, y: (f[P.lHip].y + f[P.rHip].y) / 2, z: (f[P.lHip].z + f[P.rHip].z) / 2 };
   return Math.hypot(s.x - h.x, s.y - h.y, s.z - h.z);
+}
+
+// 位相（0〜100%）に沿って、点ごと・軸ごとにガウス重みでならす（σ＝PHASE_SIGMA %）
+const PHASE_SIGMA = 1.5;
+export function smoothPhases(frames) {
+  const out = frames.map((f) => (f ? f.map((p) => ({ ...p })) : null));
+  for (let j = 0; j < JOINT_COUNT; j++) {
+    for (const a of AXES) {
+      gaussian(frames.map((f) => (f ? f[j][a] : null)), PHASE_SIGMA).forEach((v, i) => out[i] && (out[i][j][a] = v));
+    }
+  }
+  return out;
 }
 
 // 2フレームの間を直線で補間
@@ -173,7 +187,7 @@ export function fuseViews(reps) {
       return total ? [0, 1, 2].map((k) => src.reduce((sum, x) => sum + x.v[k] * x.w, 0) / total) : null;
     });
     return {
-      frames: setFeet(frames),
+      frames: setFeet(smoothPhases(frames)),
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),

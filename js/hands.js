@@ -7,13 +7,14 @@
 // 骨格推定（Pose）は手が小さく写るうえ、手どうし・体と重なると手首を見誤りやすい。
 // そこで次の2つで、画像上（2D）の手の位置を直し、その分だけ3D（world）の点を動かす：
 //   1. 手の専用推定（Hand Landmarker、手1つにつき21点）：手首・人差し指と小指の付け根
-//   2. 人による補助：画面で点をドラッグして直したフレーム（前後のフレームにも少しずつ広げる）
+//   2. 人による補助：画面で点をドラッグして直したフレーム。同じ漕ぐ側の全ストロークの、同じ位置（何%）にも効かせる
 // 2D→3D の移し方：
 //   MediaPipe の world 座標の x・y は、画像の横・縦とほぼ同じ向き（奥行き z だけが別）。
 //   フレームごとに「画像の1ピクセル＝worldの何m」を、肩・腰の点から最小二乗で求め（s）、
 //   world の x・y ＝ 肩・腰の中心 ＋（2Dの点 − 2Dの肩・腰の中心）× s。奥行き z はそのまま
 
 import { P } from "./angles.js";
+import { fillGaps, gaussian } from "./smooth.js";
 
 // Pose の手の点：手首・小指の付け根・人差し指の付け根・親指
 const POSE_HAND = { left: [P.lWrist, 17, 19, 21], right: [P.rWrist, 18, 20, 22] };
@@ -63,44 +64,105 @@ export function pixelScale(pose, world) {
 // 人が直した点の「元の推定からの移動量」（2D）。直していなければ null
 const manualShift = (p) => (p?.src === "manual" && p.ox != null ? [p.x - p.ox, p.y - p.oy] : null);
 
-// 1フレームの2Dの移動量 { 関節番号: [dx, dy] }
-//   手の専用推定 → 人の補助（そのフレーム、または前後 SPREAD フレームから距離に応じて弱めて）の順に重ねる
-//   人の補助は手以外の点（肩・腰など）にも使う
-function handShifts(pose, hands, n) {
-  const shifts = {};
-  const assigned = assignHands(hands[n], pose[n]);
-  for (const side of ["left", "right"]) {
-    const h = assigned[side];
-    if (!h) continue;
-    const [wrist, pinky, index, thumb] = POSE_HAND[side];
-    const base = (i) => [pose[n][i].ox ?? pose[n][i].x, pose[n][i].oy ?? pose[n][i].y];
-    [wrist, pinky, index].forEach((i, k) => { const b = base(i); shifts[i] = [h[k][0] - b[0], h[k][1] - b[1]]; });
-    shifts[thumb] = shifts[wrist];
+// フレームのストロークの中の位置（0〜1、0＝キャッチ）と漕ぐ側。ストロークの外なら null
+export function strokePhase(frame, strokes) {
+  for (let k = 0; k < strokes.length - 1; k++) {
+    const a = strokes[k].frame;
+    const b = strokes[k + 1].frame;
+    if (frame >= a && frame < b) return { phase: (frame - a) / (b - a), side: strokes[k].side };
   }
-  // 人の補助：近いフレームほど強く（そのフレーム＝100%、SPREAD フレーム先＝0%）
-  for (let d = -SPREAD; d <= SPREAD; d++) {
-    const f = pose[n + d];
-    if (!f) continue;
-    const w = 1 - Math.abs(d) / (SPREAD + 1);
-    f.forEach((p, i) => {
-      const m = manualShift(p);
-      if (!m) return;
-      const own = shifts[i] ?? [0, 0];
-      shifts[i] = [own[0] * (1 - w) + m[0] * w, own[1] * (1 - w) + m[1] * w];
-    });
+  return null;
+}
+
+// 人が直した点の一覧 [{ frame, joint, shift, at }]（at＝ストロークの中の位置と漕ぐ側）
+function manualFixes(pose, strokes) {
+  const list = [];
+  pose.forEach((f, frame) => f?.forEach((p, joint) => {
+    const shift = manualShift(p);
+    if (shift) list.push({ frame, joint, shift, at: strokePhase(frame, strokes) });
+  }));
+  return list;
+}
+
+// 直した点が、フレーム n にどれだけ効くか（0〜1）
+//   同じ漕ぐ側のストロークなら、ストロークの中の位置が近いほど強く（同じ位置＝100%、PHASE_WIDTH 離れると0%）
+//   → 同じ漕ぎを繰り返しているので、1か所直せば全ストロークの同じ位置に効く
+//   ストロークの外なら、フレームが近いほど強く（SPREAD フレーム先＝0%）
+export const PHASE_WIDTH = 0.08;
+function fixWeight(fix, n, at) {
+  if (fix.frame === n) return 1;
+  if (fix.at && at && fix.at.side === at.side) {
+    const d = Math.abs(fix.at.phase - at.phase);
+    return Math.max(0, 1 - Math.min(d, 1 - d) / PHASE_WIDTH);
+  }
+  return Math.max(0, 1 - Math.abs(fix.frame - n) / (SPREAD + 1));
+}
+
+// 手の専用推定による2Dの移動量を全フレーム分作る：[{ 関節番号: [dx, dy] } | null]
+//   手が見つからないフレームは、前後の見つかったフレームから補間し（HAND_GAP フレームまで）、軽くならす
+//   （見つかったフレームと見つからないフレームで手の位置が跳ばないように）
+const HAND_GAP = 15;
+function handShiftSeries(pose, hands) {
+  const raw = pose.map((f, n) => {
+    if (!f) return null;
+    const out = {};
+    const assigned = assignHands(hands[n], f);
+    for (const side of ["left", "right"]) {
+      const h = assigned[side];
+      if (!h) continue;
+      const [wrist, pinky, index] = POSE_HAND[side];
+      [wrist, pinky, index].forEach((i, k) => { out[i] = [h[k][0] - (f[i].ox ?? f[i].x), h[k][1] - (f[i].oy ?? f[i].y)]; });
+    }
+    return out;
+  });
+  const series = pose.map((f) => (f ? {} : null));
+  for (const side of ["left", "right"]) {
+    const [wrist, pinky, index, thumb] = POSE_HAND[side];
+    for (const i of [wrist, pinky, index]) {
+      for (const k of [0, 1]) {
+        const values = raw.map((r) => r?.[i]?.[k] ?? null);
+        if (!values.some((v) => v != null)) continue;
+        const filled = gaussian(fillGaps(values, HAND_GAP, values.map(() => null)), 1.5);
+        filled.forEach((v, n) => { if (v != null && series[n]) (series[n][i] ??= [0, 0])[k] = v; });
+      }
+    }
+    series.forEach((sh) => sh?.[wrist] && (sh[thumb] = sh[wrist]));
+  }
+  return series;
+}
+
+// 1フレームの2Dの移動量 { 関節番号: [dx, dy] }：手の専用推定に、人の補助を効き具合に応じて重ねる
+//   人の補助は手以外の点（肩・腰など）にも使う
+function frameShifts(handSeries, fixes, strokes, n) {
+  const shifts = { ...(handSeries[n] ?? {}) };
+  const at = strokePhase(n, strokes);
+  const byJoint = {};
+  for (const fix of fixes) {
+    const w = fixWeight(fix, n, at);
+    if (w > 0) (byJoint[fix.joint] ??= []).push({ w, shift: fix.shift });
+  }
+  for (const [joint, list] of Object.entries(byJoint)) {
+    const total = list.reduce((sum, x) => sum + x.w, 0);
+    const avg = [0, 1].map((k) => list.reduce((sum, x) => sum + x.shift[k] * x.w, 0) / total);
+    const w = Math.min(1, Math.max(...list.map((x) => x.w)));
+    const own = shifts[joint] ?? [0, 0];
+    shifts[joint] = [own[0] * (1 - w) + avg[0] * w, own[1] * (1 - w) + avg[1] * w];
   }
   return shifts;
 }
 
 // 全フレームの world を、2Dの骨格（手の専用推定・人の補助で直したもの）に合わせた新しい配列を返す（元は変えない）
-// world・pose：フレームごとの配列（null＝人が見つからない）、hands：フレームごとの手の推定（なければ省略）
-export function correctWorld(world, pose, hands = []) {
+// world・pose：フレームごとの配列（null＝人が見つからない）、hands：フレームごとの手の推定、strokes：ストロークの区切り
+// 人が直した点は src: "manual" にする（ぶれ取り smooth.js で動かさないため）
+export function correctWorld(world, pose, hands = [], strokes = []) {
   if (!world || !pose) return world;
+  const fixes = manualFixes(pose, strokes);
+  const handSeries = handShiftSeries(pose, hands);
   return world.map((w, n) => {
     if (!w || !pose[n]) return w;
     const s = pixelScale(pose[n], w);
     if (!s) return w;
-    const shifts = handShifts(pose, hands, n);
+    const shifts = frameShifts(handSeries, fixes, strokes, n);
     const torso = TORSO.filter((i) => pose[n][i].v > 0.5);
     const center2 = average(torso.map((i) => [pose[n][i].ox ?? pose[n][i].x, pose[n][i].oy ?? pose[n][i].y]));
     const center3 = average(torso.map((i) => [w[i].x, w[i].y]));
@@ -112,6 +174,7 @@ export function correctWorld(world, pose, hands = []) {
         x: center3[0] + ((q.ox ?? q.x) + dx - center2[0]) * s,
         y: center3[1] + ((q.oy ?? q.y) + dy - center2[1]) * s,
         v: shifts[i] ? Math.max(p.v, 0.9) : p.v,
+        ...(q.src === "manual" ? { src: "manual" } : {}),
       };
     });
   });

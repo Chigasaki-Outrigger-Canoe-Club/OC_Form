@@ -51,3 +51,16 @@ test("人が直した点は前後のフレームにも少しずつ広がる", ()
   assert.ok(moved[3] > 40 && moved[3] < 50);
   assert.ok(moved[0] > 0 && moved[0] < moved[3]);
 });
+
+test("人が直した点は、同じ漕ぐ側の別のストロークの同じ位置にも効く", () => {
+  const list = Array.from({ length: 60 }, () => frames());
+  const pose = list.map((f) => f.pose);
+  const world = list.map((f) => f.world);
+  const strokes = [{ frame: 0, side: "left" }, { frame: 20, side: "right" }, { frame: 40, side: "left" }, { frame: 59, side: "right" }];
+  pose[10][P.rWrist] = { x: 150, y: 400, v: 1, src: "manual", ox: 100, oy: 400 }; // 左漕ぎ 50% で右手首を +50px
+  const out = correctWorld(world, pose, [], strokes);
+  const moved = (n) => (out[n][P.rWrist].x - world[n][P.rWrist].x) / 0.002;
+  assert.ok(Math.abs(moved(10) - 50) < 1e-6);
+  assert.ok(moved(49) > 25);  // 次の左漕ぎ（40〜58）の約50%（49＝47%）にも効く（位置が少しずれる分だけ弱く）
+  assert.ok(Math.abs(moved(30)) < 1e-6);    // 右漕ぎには効かない
+});

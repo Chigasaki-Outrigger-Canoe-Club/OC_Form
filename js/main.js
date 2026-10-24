@@ -11,6 +11,7 @@ import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { correctWorld } from "./hands.js";
+import { smoothFrames } from "./smooth.js";
 import { suggestFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
@@ -33,7 +34,7 @@ const SIDE_LABEL = { right: "右漕ぎ", left: "左漕ぎ", all: "全体" };
 //   file・url：動画（動画なしの過去データでは null）
 //   pose＝2D画像座標、world＝MediaPipeの3D推定、spine＝シルエットから測った背中の膨らみ
 //   hands＝手の専用推定（2D）
-//   body＝worldを手の推定・人の補助で直し、選手基準に変換し、足首を固定・膝を拘束した座標（toBody で作る）
+//   body＝worldを手の推定・人の補助で直し、ぶれを取り、選手基準に変換し、足首を固定・膝を拘束した座標（toBody で作る）
 const views = {};
 let currentView = "left";
 let analyzing = false;
@@ -44,8 +45,10 @@ let sessionId = null;  // 表示中の過去データのID（新しいデータ�
 let sessionDate = null;
 
 const data = () => views[currentView];
-// 手の専用推定と人の補助で world を直してから、選手基準に変換する
-const toBody = (d) => (d.world ? stabilizeLegs(toBodyFrame(correctWorld(d.world, d.pose, d.hands ?? []))) : null);
+// 3Dの作り方：world を2Dの骨格（手の専用推定・人の補助で直したもの）に合わせる → ぶれを取る → 選手基準に変換 → 脚を安定させる
+const toBody = (d) => (d.world
+  ? stabilizeLegs(toBodyFrame(smoothFrames(correctWorld(d.world, d.pose, d.hands ?? [], d.strokes ?? []), d.fps)))
+  : null);
 const today = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
 
 // ================= 再生位置（動画があれば動画、なければ解析結果のフレーム） =================
@@ -875,7 +878,8 @@ function renderAssist() {
   for (const [n, a] of (d?.assist ?? []).entries()) {
     const fixed = d.pose[a.frame].some((p) => p.src === "manual");
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${n + 1}</td><td>${formatTime(a.frame / d.fps)}</td><td>${a.weak.join("・") || "全体を確認"}</td>`
+    const at = a.at ? `${SIDE_LABEL[a.at.side] ?? ""} ${Math.round(a.at.phase * 100)}%` : "";
+    tr.innerHTML = `<td>${n + 1}</td><td>${formatTime(a.frame / d.fps)}<br><span class="muted small">${at}</span></td><td>${a.weak.join("・") || "全体を確認"}</td>`
       + `<td><button class="btn small">このフレームへ</button> ${fixed ? '<span class="muted">直した</span>' : ""}</td>`;
     tr.querySelector("button").addEventListener("click", () => { showDisplay("video"); goToFrame(a.frame); });
     body.appendChild(tr);

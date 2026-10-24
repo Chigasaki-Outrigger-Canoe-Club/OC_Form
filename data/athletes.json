@@ -1,0 +1,35 @@
+{
+ "format": "oc-form-athletes",
+ "version": 1,
+ "savedAt": "2026-10-24T14:14:35.632Z",
+ "current": "amvmhcwb6erre",
+ "list": [
+  {
+   "id": "amvgssbbjaf3a",
+   "name": "Manato",
+   "values": {
+    "height": "166",
+    "weight": "70",
+    "paddle": "49",
+    "bladeLength": "48",
+    "bladeWidth": "25"
+   }
+  },
+  {
+   "id": "amvm9pkzfx9ur",
+   "name": "Daisuke",
+   "values": {
+    "height": "188",
+    "weight": "84",
+    "paddle": "52",
+    "bladeLength": "48",
+    "bladeWidth": "25"
+   }
+  },
+  {
+   "id": "amvmhcwb6erre",
+   "name": "Yousuke",
+   "values": {}
+  }
+ ]
+}

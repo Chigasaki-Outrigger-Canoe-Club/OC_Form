@@ -10,12 +10,14 @@
 //      画面に平行な軸は高くする。 reliability(軸) = 1 − 0.8 ×（カメラ方向の成分）²
 //      さらに「部位ごとの得意・不得意」（jointWeights）を掛ける。向きはカメラの方向から自動で決める
 //   4. 位相に沿って軽くならす（平均しても残る細かいぎざぎざを取る）
-//   5. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
+//   5. 漕ぎとしてありえない形を直す（constraints.js：骨の長さ・胴と頭の傾き）
+//   6. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
 // 結果は「同じ漕ぎ方を繰り返している」と仮定した推定値で、特定の1ストロークの再現ではない。
 
 import { P } from "./angles.js";
 import { cameraDirection, median, shaftToBody } from "./body3d.js";
 import { setFeet } from "./legs.js";
+import { plausibleBody } from "./constraints.js";
 import { gaussian, fillGaps } from "./smooth.js";
 
 export const PHASES = 101; // 0%, 1%, …, 100%
@@ -230,7 +232,7 @@ export function fuseViews(reps) {
       return { x: v[0] / len, y: v[1] / len, z: v[2] / len };
     }) : null;
     return {
-      frames: setFeet(smoothPhases(frames)),
+      frames: setFeet(plausibleBody(smoothPhases(frames))),
       shaft,
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),

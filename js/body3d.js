@@ -8,6 +8,7 @@
 
 import { P } from "./angles.js";
 import { cleanShafts } from "./shaft.js";
+import { plausibleShaft } from "./constraints.js";
 
 const HEEL_L = 29, HEEL_R = 30, TOE_L = 31, TOE_R = 32;
 
@@ -90,11 +91,16 @@ export function estimatePaddle(body, size, side = null, shaft = null) {
   const top = bottom === l ? r : l;
   if (length(sub(bottom, top)) < 0.05) return null;
 
-  const dir = alignToShaft(normalize(sub(bottom, top)), shaft);
+  // 両手から向きを決め → 画像のシャフトに合わせ → 漕ぎとしてありえない向き（上向き・反対側）を直す
+  const dir = plausibleShaft(alignToShaft(normalize(sub(bottom, top)), shaft), bottom === l ? "left" : "right");
+  return paddleAlong(top, bottom, dir, size, bottom === l ? "left" : "right");
+}
+
+// 上の手 top からの向き dir でパドルを置く
+function paddleAlong(top, bottom, dir, size, side) {
   // ブレード面の幅方向：シャフトと前後方向（Z）の両方に直角＝ブレード面は前を向く
   let widthDir = cross(dir, { x: 0, y: 0, z: 1 });
   if (length(widthDir) < 0.1) widthDir = { x: 1, y: 0, z: 0 };
-
   return {
     grip: { x: top.x, y: top.y, z: top.z },
     lowerGrip: { x: bottom.x, y: bottom.y, z: bottom.z },
@@ -102,9 +108,32 @@ export function estimatePaddle(body, size, side = null, shaft = null) {
     tip: add(top, scale(dir, size.length)),
     widthDir: normalize(widthDir),
     bladeWidth: size.bladeWidth,
-    side: bottom === l ? "left" : "right",
+    side,
     src: "est",
   };
+}
+
+// 並んだフレーム（またはストロークの位相）のパドルを、向きがなめらかになるように作る
+// 両手が近いと、両手を結ぶ向きは少しのずれで大きく回ってしまう（パドルが飛ぶ）。そこで
+//   重み＝両手の距離（TRUST_FROM〜TRUST_TO m で 0.05〜1）として、前後 ±4 コマの向きを重み付きで平均する
+//   漕ぐ側が変わるところ（パドルチェンジ）はまたがない
+// bodies・sides・shafts：同じ長さの配列（shafts は省略可）
+const TRUST_FROM = 0.1;
+const TRUST_TO = 0.4;
+export function paddleTrack(bodies, size, sides, shafts = []) {
+  const raw = bodies.map((b, i) => estimatePaddle(b, size, sides[i], shafts[i] ?? null));
+  const dirs = raw.map((p) => p && normalize(sub(p.tip, p.grip)));
+  const trust = raw.map((p) => (p ? Math.min(1, Math.max(0.05, (length(sub(p.lowerGrip, p.grip)) - TRUST_FROM) / (TRUST_TO - TRUST_FROM))) : 0));
+  return raw.map((p, i) => {
+    if (!p) return p;
+    let sum = { x: 0, y: 0, z: 0 };
+    for (let k = -4; k <= 4; k++) {
+      const j = i + k;
+      if (!raw[j] || raw[j].side !== p.side) continue;
+      sum = add(sum, scale(dirs[j], Math.exp(-(k * k) / 8) * trust[j]));
+    }
+    return paddleAlong(p.grip, p.lowerGrip, plausibleShaft(normalize(sum), p.side), size, p.side);
+  });
 }
 
 // 両手から決めた向き d の、左右・上下の成分の向きを、シャフトの向きに合わせる（長さと前後の成分はそのまま）

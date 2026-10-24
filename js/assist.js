@@ -77,7 +77,7 @@ export const KEYS = [
 ];
 
 // 漕ぐ側ごとの代表のストローク：長さが中央値に最も近いもの（最初と最後のストロークはなるべく使わない）
-function representative(strokes, side) {
+export function representative(strokes, side) {
   const list = strokes.slice(0, -1).map((s, n) => ({ n, len: strokes[n + 1].frame - s.frame, side: s.side })).filter((x) => x.side === side);
   if (!list.length) return null;
   const inner = list.length > 2 ? list.filter((x) => x.n > 0 && x.n < strokes.length - 2) : list;

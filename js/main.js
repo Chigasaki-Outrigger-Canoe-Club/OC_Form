@@ -3,7 +3,6 @@
 import { timeToFrame, frameToTime, frameCount, clampFrame, formatTime } from "./frame-math.js";
 import { readVideoInfo } from "./mp4-info.js";
 import { analyzeVideo } from "./pose.js";
-import { setupErg } from "./erg-view.js";
 import { P } from "./angles.js";
 import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
@@ -14,12 +13,13 @@ import { correctWorld, corrected2d } from "./hands.js";
 import { qualityTable } from "./quality.js";
 import { cleanShafts } from "./shaft.js";
 import { compressVideo } from "./compress.js";
+import { setupCompare } from "./compare.js";
 import { smoothFrames } from "./smooth.js";
 import { plausibleBody } from "./constraints.js";
 import { keyFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
-import { detectDrive, refineToCatch, releaseFrame } from "./drive.js";
+import { detectDrive, refineToCatch } from "./drive.js";
 import { buildFeedback } from "./feedback.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
@@ -130,7 +130,6 @@ seek.addEventListener("input", () => goToFrame(Number(seek.value)));
 document.addEventListener("keydown", (e) => {
   if (["INPUT", "SELECT"].includes(e.target.tagName)) return;
   if (e.code === "Space") { e.preventDefault(); togglePlay(); }
-  if (e.code === "Enter" && editorOpen()) { e.preventDefault(); setCatch(); }
   if (e.code === "ArrowLeft") stepFrame(-1);
   if (e.code === "ArrowRight") stepFrame(1);
 });
@@ -226,7 +225,6 @@ document.querySelectorAll(".tab[data-view]").forEach((tab) => {
 
 function selectView(view) {
   currentView = view;
-  el("strokeEditor").hidden = true;
   virtual.playing = false;
   virtual.frame = 0;
   document.querySelectorAll(".tab[data-view]").forEach((tab) => {
@@ -243,7 +241,6 @@ function selectView(view) {
     : d.url ? "読み込み中…"
     : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
   renderQuality();
-  renderStrokes();
   updateDisplay();
 }
 
@@ -422,7 +419,7 @@ async function analyzeCurrent(label) {
 
 function setAnalyzing(on) {
   analyzing = on;
-  ["runAll", "saveSession", "detect", "fileInput"].forEach((id) => (el(id).disabled = on));
+  ["runAll", "fileInput"].forEach((id) => (el(id).disabled = on));
   el("stop").disabled = !on;
 }
 
@@ -499,7 +496,6 @@ function dataChanged() {
   };
   el("fusionInfo").textContent = fused ? `統合に使ったストローク… ${describe("right")}／${describe("left")}` : "";
   renderFeedback(info);
-  renderStrokes();
   updateDisplay();
 }
 
@@ -549,10 +545,6 @@ async function saveCurrentSession() {
   return true;
 }
 
-el("saveSession").addEventListener("click", () => {
-  if (!Object.keys(views).length) return alert("データがありません");
-  saveCurrentSession();
-});
 
 // ---- GitHubへの自動保存（解析結果のみ） ----
 const GITHUB_KEY = "oc-form-github";
@@ -820,116 +812,6 @@ async function importSessionText(text) {
   }
 }
 
-// ================= ストローク（必要なときだけ手で直す） =================
-el("detect").addEventListener("click", () => {
-  const d = data();
-  if (!d?.pose) return alert("この方向はまだ解析していません");
-  if (d.strokes.some((s) => s.src === "manual") && !confirm("手で設定したキャッチもやり直されます。よろしいですか？")) return;
-  d.strokes = refineToCatch(detectStrokes(d.pose, d.fps), d.body);
-  dataChanged();
-});
-
-el("addStroke").addEventListener("click", () => {
-  const d = data();
-  if (!d?.pose) return;
-  const frame = currentFrame();
-  if (d.strokes.some((s) => s.frame === frame)) return;
-  d.strokes.push({ frame, side: null, src: "manual" });
-  d.strokes.sort((a, b) => a.frame - b.frame);
-  dataChanged();
-});
-
-function renderStrokes() {
-  const strokes = data()?.strokes ?? [];
-  const body = el("strokeList");
-  body.innerHTML = "";
-  el("strokeCount").textContent = strokes.length > 1 ? `（${VIEW_LABELS[currentView]}・${strokes.length - 1} ストローク）` : "";
-
-  strokes.forEach((s, n) => {
-    const last = n === strokes.length - 1;
-    const release = releaseFrame(strokes, n, data().body);
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${last ? "終端" : n + 1}</td>
-      <td><button class="link">${formatTime(s.frame / fps())}</button> ${s.src === "manual" ? '<span class="muted">手で設定</span>' : ""}</td>
-      <td>${release == null ? "--" : formatTime(release / fps())}</td>
-      <td>${last ? "" : `<select class="btn small">
-        <option value="">不明</option>
-        <option value="left" ${s.side === "left" ? "selected" : ""}>左</option>
-        <option value="right" ${s.side === "right" ? "selected" : ""}>右</option>
-      </select>`}</td>
-      <td><button class="btn small">削除</button></td>`;
-    row.querySelector(".link").addEventListener("click", () => { video.pause(); virtual.playing = false; goToFrame(s.frame); });
-    row.querySelector("select")?.addEventListener("change", (e) => {
-      s.side = e.target.value || null;
-      dataChanged();
-    });
-    row.querySelector("td:last-child button").addEventListener("click", () => {
-      strokes.splice(n, 1);
-      dataChanged();
-    });
-    body.appendChild(row);
-  });
-  renderEditor();
-}
-
-// ================= ストロークの区切りの編集（キャッチを手で設定） =================
-let editIndex = 0;
-const editorOpen = () => !el("strokeEditor").hidden;
-
-el("editStrokes").addEventListener("click", () => {
-  if (!data()?.strokes?.length) return alert("この方向にはストロークがありません（先に解析してください）");
-  if (!hasVideo()) return alert("動画を表示できるときに編集できます");
-  showDisplay("video");
-  el("strokeEditor").hidden = false;
-  el("strokeEditor").scrollIntoView({ block: "center", behavior: "smooth" });
-  openEdit(0);
-});
-
-el("editClose").addEventListener("click", () => (el("strokeEditor").hidden = true));
-el("editPrev").addEventListener("click", () => openEdit(editIndex - 1));
-el("editNext").addEventListener("click", () => openEdit(editIndex + 1));
-el("editNo").addEventListener("change", (e) => openEdit(Number(e.target.value)));
-el("editCatch").addEventListener("click", setCatch);
-
-// No.n を開き、その開始位置へ動画を動かす
-function openEdit(n) {
-  const strokes = data().strokes;
-  editIndex = Math.min(Math.max(n, 0), strokes.length - 1);
-  video.pause();
-  goToFrame(strokes[editIndex].frame);
-  renderEditor();
-}
-
-// 今の位置を No.n のキャッチ（開始）にして、次の No へ進む
-function setCatch() {
-  const strokes = data().strokes;
-  const frame = currentFrame();
-  const prev = strokes[editIndex - 1];
-  const next = strokes[editIndex + 1];
-  if ((prev && frame <= prev.frame) || (next && frame >= next.frame)) {
-    el("editInfo").textContent = `前後のストロークの開始（No.${editIndex}〜No.${editIndex + 2}）の間に置いてください。`;
-    return;
-  }
-  strokes[editIndex] = { ...strokes[editIndex], frame, src: "manual" };
-  dataChanged();
-  if (editIndex < strokes.length - 1) openEdit(editIndex + 1);
-  else el("editInfo").textContent = "最後まで設定しました。ストローク欄の「修正を保存」で保存してください。";
-}
-
-function renderEditor() {
-  if (!editorOpen() || !data()) return;
-  const strokes = data().strokes;
-  const select = el("editNo");
-  select.innerHTML = "";
-  strokes.forEach((_, n) => select.add(new Option(n === strokes.length - 1 ? `終端` : `${n + 1}`, n, false, n === editIndex)));
-  el("editView").textContent = VIEW_LABELS[currentView];
-  const s = strokes[editIndex];
-  const release = releaseFrame(strokes, editIndex, data().body);
-  el("editInfo").textContent = `No.${editIndex + 1} / ${strokes.length - 1}：今の開始 ${formatTime(s.frame / fps())}（${s.src === "manual" ? "手で設定" : "自動推定"}）`
-    + `、力が抜けた位置（推定）${release == null ? "--" : formatTime(release / fps())}、${SIDE_LABEL[s.side] ?? "漕ぐ側不明"}`;
-}
-
 // ================= 関節のドラッグ修正（停止中のみ） =================
 let dragging = null;
 
@@ -1129,9 +1011,9 @@ function updateDisplay() {
   startLoop();
 }
 
-setupErg();
 sessions.requestPersist(); // ブラウザに「この保存を消さないで」と頼む（対応しているブラウザのみ）
 renderAthletes();
 loadGitHubAthletes();
 showGitHubList();
+setupCompare(ghSettings);
 selectView("left");

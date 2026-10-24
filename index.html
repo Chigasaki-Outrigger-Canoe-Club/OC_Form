@@ -61,6 +61,25 @@
       </div>
     </section>
 
+    <!-- 選手を並べて比べる（保存したデータの動画＋骨格。ストロークの同じ位置でそろえる） -->
+    <section class="panel">
+      <h2>選手を並べて比べる</h2>
+      <div class="row">
+        <label>方向 <select id="compareView" class="btn">
+          <option value="right">右</option><option value="left">左</option><option value="front">前</option><option value="back">後ろ</option>
+        </select></label>
+        <label><input type="radio" name="compareSide" value="right" checked> 右漕ぎ</label>
+        <label><input type="radio" name="compareSide" value="left"> 左漕ぎ</label>
+        <button class="btn" id="comparePlay">▶ 再生</button>
+        <select id="compareSpeed" class="btn" aria-label="再生速度">
+          <option value="1">1倍速</option><option value="0.5">1/2倍速</option><option value="0.25" selected>1/4倍速</option>
+        </select>
+        <input type="range" id="comparePhase" min="0" max="100" value="0" class="wide" aria-label="ストロークの位置">
+      </div>
+      <div id="compareGrid" class="compare-grid"></div>
+      <p class="muted">GitHubに保存したデータ（動画つき）から選びます。各動画の代表の1ストローク（その漕ぐ側で、長さが中央値に近いもの）を繰り返し、全員が同じ瞬間にストロークの同じ位置（0%＝キャッチ）になるよう再生速度をそろえます。PCは4人、スマホは2人まで並びます。撮る位置・高さ・距離をそろえるほど比べやすくなります。</p>
+    </section>
+
     <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->
     <section class="panel">
       <h2>動画と3Dモデル</h2>
@@ -86,7 +105,7 @@
       <details class="sub">
         <summary>保存の設定</summary>
         <label><input type="checkbox" id="ghVideo"> 動画もGitHubに保存する（ブラウザの中で小さくして送ります。1本 約5〜8MB。<strong>公開リポジトリなので、動画も誰でも見られます</strong>）</label><br>
-        <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデルとストロークの区切りだけ）</label>
+        <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデル・ストロークの区切り・2Dの骨格だけ）</label>
         <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）・選手データと、小さくした動画です（下のチェックで動画を送らないこともできます）。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
           <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
@@ -204,19 +223,6 @@
         <p class="muted">長さは胴の長さ（肩の中点〜腰の中点）に対する割合。跳び＝1フレームで胴の長さの25%以上動いた回数（単発の誤検出の目安）。ぶれ＝位置の2階差分の中央値（細かい揺れ。素早い動きでも大きくなる）。同じ位置のばらつき＝ストロークの同じ位置（0〜100%を5%ごと）での位置のばらつき（推定のぶれとフォームのばらつきの両方を含む）。正解とのずれ以外は「正しさ」ではなく「安定さ」の目安です。この版の MediaPipe（ブラウザ版）は presence を出さないため、信頼度は visibility です。</p>
       </details>
 
-      <!-- ストロークの区切りの編集（ストローク欄の「編集する」で表示） -->
-      <div id="strokeEditor" class="sub editor" hidden>
-        <div class="row">
-          <strong>ストローク編集（<span id="editView"></span>）</strong>
-          <label>No. <select id="editNo" class="btn"></select></label>
-          <button class="btn" id="editPrev">◀ 前のNo</button>
-          <button class="btn" id="editNext">次のNo ▶</button>
-          <button class="btn primary" id="editCatch">キャッチ（ここを開始にする）</button>
-          <button class="btn" id="editClose">編集を終わる</button>
-        </div>
-        <p id="editInfo" class="muted"></p>
-        <p class="muted">動画を再生・コマ送りして、力を入れ始める瞬間（キャッチ）で「キャッチ」を押すと、そのストロークの開始になり、次のNoへ進みます（Enterキーでも可）。力が抜けた位置は自動で推定します。終わったらストローク欄の「修正を保存」を押してください。</p>
-      </div>
     </section>
 
     <!-- 3. フォームの改善点 -->
@@ -241,40 +247,7 @@
       <p class="muted">統合3Dモデル（推定）から計算しています。「改善候補」＝目安から外れた項目、「左右差」＝目安の範囲内でも右漕ぎと左漕ぎで差が大きい項目です。各項目の「根拠」に、目安のもとにした資料を示しています。アウトリガーの研究はまだ少なく、確定した「お手本」の数値はありません。ボートの資料は考え方（体幹の使い方）だけを参考にしていて、競技も動きも違います（値は <code>js/feedback.js</code> の LIMITS で変更できます）。気になる項目は動画で確認してください。</p>
     </section>
 
-    <!-- Concept2（エルゴ） -->
-    <section class="panel">
-      <h2>Concept2（エルゴ）</h2>
-      <p class="muted">USBでつないだPM5の記録（<code>tools/pm5/pm5_usb.py</code> が作る <code>pm5_日時.csv</code>）を選んでください。Concept2 Logbook（log.concept2.com）から書き出したCSVも読めます。ほかのアプリのCSVも、列の見出し（Watts・Stroke Rate・Heart Rate など）から読みます。</p>
-      <input type="file" id="ergFile" accept=".csv,text/csv">
-      <p id="ergInfo" class="muted"></p>
-      <div id="ergResult" hidden>
-        <div id="ergSummary" class="erg-stats"></div>
-        <div id="ergCharts" class="erg-charts"></div>
-        <table class="table">
-          <thead><tr><th>項目</th><th>値</th><th>コメント</th></tr></thead>
-          <tbody id="ergFeedback"></tbody>
-        </table>
-        <p class="muted">グラフの細い線＝1ストロークごと、太い線＝前後5本の平均。最初の10秒（漕ぎ出し）は計算から除いています。改善点の目安はこのサイトの仮の基準です（値は <code>js/erg.js</code> の LIMITS で変更できます）。ピッチのコメントだけ、OCエルゴの研究をもとにしています。</p>
-      </div>
-    </section>
 
-    <!-- 5. ストローク（まとめて実行で自動検出。必要なときだけ修正） -->
-    <section class="panel">
-      <h2>ストローク <span id="strokeCount" class="muted"></span></h2>
-      <div class="row">
-        <button class="btn primary" id="editStrokes">編集する</button>
-        <button class="btn" id="detect">自動検出をやり直す</button>
-        <button class="btn" id="addStroke">現在位置に区切りを追加</button>
-        <button class="btn" id="saveSession">修正を保存</button>
-      </div>
-      <p class="muted">表示中の方向のストロークです。開始＝キャッチ（自動推定。「編集する」で動画を見ながら設定できます）。パドルチェンジの前後は漕ぐ側も確認してください。</p>
-      <div class="scroll">
-        <table class="table">
-          <thead><tr><th>No.</th><th>キャッチ（開始）</th><th>力が抜けた位置（推定）</th><th>漕ぐ側</th><th></th></tr></thead>
-          <tbody id="strokeList"></tbody>
-        </table>
-      </div>
-    </section>
   </main>
 
   <!-- 読み込みに失敗したとき（更新の直後に古いファイルが混ざったときなど）は、再読み込みを案内する -->

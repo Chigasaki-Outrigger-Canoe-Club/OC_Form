@@ -50,14 +50,15 @@ export const sortSessions = (list) => [...list].sort((a, b) =>
 // ---------- ファイル（書き出し・読み込み・GitHub保存）の形式 ----------
 
 // 書き出す中身（セッションの記録に形式名と説明を付ける）。動画は含まない
-// raw が false なら、全フレームのデータ（pose・world・spine・hands）を省き、平均の3Dモデルとストロークだけにする
+// raw が false なら、3D推定などの全フレームのデータ（world・spine・hands・shaft）を省き、平均の3Dモデル・ストローク・2Dの骨格だけにする
 export function buildSessionFile(session, { raw = false } = {}) {
-  const views = raw ? session.views : Object.fromEntries(Object.entries(session.views).map(([v, r]) => [v, { video: r.video, strokes: r.strokes, truth: r.truth ?? null }]));
+  // 既定でも2Dの骨格（pose）は入れる：選手を並べて比べるとき、動画に点を重ねるため（1方向 約1MB）
+  const views = raw ? session.views : Object.fromEntries(Object.entries(session.views).map(([v, r]) => [v, { video: r.video, strokes: r.strokes, truth: r.truth ?? null, pose: r.pose ?? null }]));
   return {
     format: "oc-form-session",
     version: 1,
     notes: {
-      contents: raw ? "解析結果（全フレーム）と平均の3Dモデル。動画は含まない" : "平均の3Dモデル（model）とストロークの区切りのみ。全フレームのデータと動画は含まない",
+      contents: raw ? "解析結果（全フレーム）と平均の3Dモデル。動画は別ファイル" : "平均の3Dモデル（model）、ストロークの区切り、2Dの骨格（pose）。3D推定などの全フレームのデータは含まない。動画は別ファイル",
       model: "漕ぐ側ごとの代表ストローク（0〜100%の101点）。選手基準の3D座標（X左・Y上・Z前、単位およそm）。spine＝背中の膨らみ、duration＝平均ストローク時間（秒）",
       pose: "画像上のピクセル座標（左上が原点、yは下向き）。v＝MediaPipeの信頼度（0〜1）。src：est＝推定値、manual＝手動修正（ox・oy＝直す前の推定の位置）",
       shaft: "画像から見つけた木のシャフト（前・後ろの動画）。フレームごとに { dir: 画像上の向き（下向き）, point: 線の上の1点（ピクセル）, s: 確かさ }",

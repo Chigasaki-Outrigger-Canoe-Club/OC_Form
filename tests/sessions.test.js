@@ -47,12 +47,12 @@ test("ファイル：書き出し→読み込みで元に戻る、形式が違�
   assert.throws(() => parseSessionFile("not json"));
 });
 
-test("ファイル：既定では平均モデル・ストローク・正解だけ（全フレームのデータは省く）", () => {
+test("ファイル：既定では平均モデル・ストローク・正解・2Dの骨格だけ（3D推定などは省く）", () => {
   const model = { right: { frames: [[1]] }, left: null };
   const s = buildSession({ athlete, date: "2026-10-20", memo: "m", views: { left: view([[1]]) }, model });
   const small = buildSessionFile(s);
   assert.deepEqual(small.model, model);
-  assert.deepEqual(Object.keys(small.views.left), ["video", "strokes", "truth"]);
+  assert.deepEqual(Object.keys(small.views.left), ["video", "strokes", "truth", "pose"]);
   const full = buildSessionFile(s, { raw: true });
   assert.deepEqual(full.views.left.pose, [[1]]);
 });

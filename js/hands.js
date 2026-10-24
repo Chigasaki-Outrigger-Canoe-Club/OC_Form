@@ -1,4 +1,8 @@
-// 手の位置の補正（2Dの補正を3Dへ移す）
+// 3D（world）を画像上の骨格（2D）に合わせる。あわせて手の位置を補正する
+//
+// MediaPipe の3D推定（world）は、画像上の骨格（2D）とは別に推定された値で、頭・首・手がずれやすい
+// （実データの例：横からの動画で、首の傾きが画像と3Dで最大37°違った）。
+// そこで、画面の縦・横の方向は2Dの骨格に合わせ、world はカメラの奥行き方向（z）だけに使う。
 //
 // 骨格推定（Pose）は手が小さく写るうえ、手どうし・体と重なると手首を見誤りやすい。
 // そこで次の2つで、画像上（2D）の手の位置を直し、その分だけ3D（world）の点を動かす：
@@ -7,7 +11,7 @@
 // 2D→3D の移し方：
 //   MediaPipe の world 座標の x・y は、画像の横・縦とほぼ同じ向き（奥行き z だけが別）。
 //   フレームごとに「画像の1ピクセル＝worldの何m」を、肩・腰の点から最小二乗で求め（s）、
-//   2Dで動かした量 ×s を world の x・y に足す。奥行き z はそのまま（1台のカメラでは測れないため）
+//   world の x・y ＝ 肩・腰の中心 ＋（2Dの点 − 2Dの肩・腰の中心）× s。奥行き z はそのまま
 
 import { P } from "./angles.js";
 
@@ -88,7 +92,7 @@ function handShifts(pose, hands, n) {
   return shifts;
 }
 
-// 全フレームの world を、手の専用推定と人の補助で直した新しい配列を返す（元は変えない）
+// 全フレームの world を、2Dの骨格（手の専用推定・人の補助で直したもの）に合わせた新しい配列を返す（元は変えない）
 // world・pose：フレームごとの配列（null＝人が見つからない）、hands：フレームごとの手の推定（なければ省略）
 export function correctWorld(world, pose, hands = []) {
   if (!world || !pose) return world;
@@ -97,6 +101,20 @@ export function correctWorld(world, pose, hands = []) {
     const s = pixelScale(pose[n], w);
     if (!s) return w;
     const shifts = handShifts(pose, hands, n);
-    return w.map((p, i) => (shifts[i] ? { ...p, x: p.x + shifts[i][0] * s, y: p.y + shifts[i][1] * s, v: Math.max(p.v, 0.9) } : p));
+    const torso = TORSO.filter((i) => pose[n][i].v > 0.5);
+    const center2 = average(torso.map((i) => [pose[n][i].ox ?? pose[n][i].x, pose[n][i].oy ?? pose[n][i].y]));
+    const center3 = average(torso.map((i) => [w[i].x, w[i].y]));
+    return w.map((p, i) => {
+      const q = pose[n][i];
+      const [dx, dy] = shifts[i] ?? [0, 0];
+      return {
+        ...p,
+        x: center3[0] + ((q.ox ?? q.x) + dx - center2[0]) * s,
+        y: center3[1] + ((q.oy ?? q.y) + dy - center2[1]) * s,
+        v: shifts[i] ? Math.max(p.v, 0.9) : p.v,
+      };
+    });
   });
 }
+
+const average = (list) => [0, 1].map((k) => list.reduce((sum, p) => sum + p[k], 0) / list.length);

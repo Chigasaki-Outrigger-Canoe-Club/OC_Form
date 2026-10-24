@@ -519,18 +519,16 @@ el("saveSession").addEventListener("click", () => {
 const GITHUB_KEY = "oc-form-github";
 let ghSettings = { ...github.DEFAULT_SETTINGS };
 try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
-el("ghEnabled").checked = ghSettings.enabled;
 el("rawExport").checked = ghSettings.raw;
 el("rawExport").addEventListener("change", () => saveGhSettings());
 el("ghToken").value = ghSettings.token;
 el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
 
 function saveGhSettings() {
-  ghSettings = { ...ghSettings, enabled: el("ghEnabled").checked, token: el("ghToken").value.trim(), raw: el("rawExport").checked };
+  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked };
   try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
 }
 
-el("ghEnabled").addEventListener("change", saveGhSettings);
 el("ghToken").addEventListener("change", saveGhSettings);
 
 el("ghTest").addEventListener("click", async () => {
@@ -544,13 +542,13 @@ el("ghTest").addEventListener("click", async () => {
   }
 });
 
-// 失敗してもブラウザ内の保存はそのまま
+// トークンが入っていれば、解析結果と選手データを送る。失敗してもブラウザ内の保存はそのまま
 async function uploadToGitHub(session) {
-  if (!ghSettings.enabled) return;
-  if (!ghSettings.token) { el("ghNote").textContent = "トークンが未入力のため、GitHubには保存していません。"; return; }
+  if (!ghSettings.token) { el("ghNote").textContent = "トークンが未入力のため、GitHubには保存していません（スマホで見るには「保存の設定」でトークンを入れてください）。"; return; }
   el("ghNote").textContent = "GitHubに保存中…";
   try {
     const url = await github.uploadSession(ghSettings, session);
+    await github.uploadAthletes(ghSettings, athletes.buildBackup(store));
     el("ghNote").innerHTML = "";
     el("ghNote").append("GitHubに保存しました：", Object.assign(document.createElement("a"), { href: url, target: "_blank", textContent: github.sessionPath(session) }));
   } catch (err) {
@@ -674,7 +672,10 @@ el("importSession").addEventListener("change", async (event) => {
 });
 
 // GitHubの保存データの一覧を出す。行を押すと読み込んで表示する
-el("ghList").addEventListener("click", async () => {
+el("ghList").addEventListener("click", showGitHubList);
+
+// GitHubに保存したデータの一覧（トークン不要。スマホでも開いたときに自動で出す）
+async function showGitHubList() {
   const body = el("ghSessionList");
   body.innerHTML = "<tr><td>読み込み中…</td></tr>";
   try {
@@ -698,7 +699,17 @@ el("ghList").addEventListener("click", async () => {
     body.innerHTML = "";
     el("sessionNote").textContent = `GitHubの一覧を読めません：${err.message}`;
   }
-});
+}
+
+// 別の端末（PC）で保存した選手データを読み、この端末にいない選手を追加する
+async function loadGitHubAthletes() {
+  try {
+    const res = await fetch(github.rawUrl(ghSettings, github.ATHLETES_PATH), { cache: "no-store" });
+    if (!res.ok) return;
+    const merged = athletes.mergeAthletes(store, athletes.parseBackup(await res.text()));
+    if (merged !== store) saveAthletes(merged);
+  } catch { /* 読めなくてもこの端末の選手データで続ける */ }
+}
 
 async function importSessionText(text) {
   try {
@@ -948,4 +959,6 @@ function updateDisplay() {
 
 setupErg();
 renderAthletes();
+loadGitHubAthletes();
+showGitHubList();
 selectView("left");

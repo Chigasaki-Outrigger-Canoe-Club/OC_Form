@@ -69,3 +69,11 @@ export function parseBackup(text) {
 }
 
 export const buildBackup = (store) => ({ format: "oc-form-athletes", version: 1, savedAt: new Date().toISOString(), ...store });
+
+// 別の端末で保存した選手データ（GitHub）を合わせる：この端末にいない選手だけ追加する
+// （この端末で入力した値は変えない。選手が誰もいなければ、保存されていた選択中の選手を選ぶ）
+export function mergeAthletes(store, remote) {
+  const missing = remote.list.filter((r) => !store.list.some((a) => a.id === r.id || a.name === r.name));
+  if (!missing.length) return store;
+  return { current: store.current ?? remote.current ?? missing[0].id, list: [...store.list, ...missing] };
+}

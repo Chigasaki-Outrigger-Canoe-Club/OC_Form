@@ -1,7 +1,7 @@
 // 解析結果をGitHubのリポジトリに保存する（GitHub REST API の contents を使用）
 // - 保存先：settings.branch（初期値 "data"）。サイト本体の main とは分ける
 //   （保存のたびにサイトが作り直されないように、またコードの更新とぶつからないように）
-// - 保存するもの：セッションの解析結果（JSON）。動画は大きすぎるため保存しない
+// - 保存するもの：セッションの解析結果（JSON）と選手データ（data/athletes.json）。動画は大きすぎるため保存しない
 // - 認証：利用者が発行した Fine-grained personal access token（このリポジトリの Contents 読み書きのみ）
 //   トークンはこのブラウザの localStorage にだけ保存する
 // 注意：リポジトリが公開の場合、保存したデータは誰でも見られる
@@ -12,8 +12,7 @@ export const DEFAULT_SETTINGS = {
   owner: "chigasaki-outrigger-canoe-club",
   repo: "OC_Form",
   branch: "data",
-  token: "",
-  enabled: false,
+  token: "", // トークンが入っていれば、保存のたびに自動で送る
   raw: false, // true なら全フレームのデータも送る（既定は平均の3Dモデルとストロークだけ）
 };
 
@@ -97,21 +96,27 @@ export async function listSavedSessions(settings, fetchFn = fetch) {
 export const rawUrl = (settings, path) =>
   `https://raw.githubusercontent.com/${settings.owner}/${settings.repo}/${settings.branch}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
-// セッションを保存（同じファイルがあれば上書き）。戻り値：GitHub上のURL
-export async function uploadSession(settings, session, fetchFn) {
+// ファイルを保存（同じファイルがあれば上書き）。戻り値：GitHub上のURL
+async function putFile(settings, path, text, message, fetchFn) {
   const api = client(settings, fetchFn);
   await ensureBranch(api, settings);
-  const path = sessionPath(session);
   const urlPath = `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
   const existing = await api(`${urlPath}?ref=${settings.branch}`);
   const result = await api(urlPath, {
     method: "PUT",
-    body: JSON.stringify({
-      message: `解析結果を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${session.memo ?? ""}`.trim(),
-      content: toBase64(JSON.stringify(buildSessionFile(session, { raw: settings.raw }))),
-      branch: settings.branch,
-      ...(existing?.sha ? { sha: existing.sha } : {}),
-    }),
+    body: JSON.stringify({ message, content: toBase64(text), branch: settings.branch, ...(existing?.sha ? { sha: existing.sha } : {}) }),
   });
   return result.content.html_url;
+}
+
+// セッションを保存
+export function uploadSession(settings, session, fetchFn) {
+  const message = `解析結果を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${session.memo ?? ""}`.trim();
+  return putFile(settings, sessionPath(session), JSON.stringify(buildSessionFile(session, { raw: settings.raw })), message, fetchFn);
+}
+
+// 選手データ（全員の名前・身長・体重・パドル寸法）を保存
+export const ATHLETES_PATH = "data/athletes.json";
+export function uploadAthletes(settings, backup, fetchFn) {
+  return putFile(settings, ATHLETES_PATH, JSON.stringify(backup, null, 1), "選手データを保存", fetchFn);
 }

@@ -70,3 +70,14 @@ test("保存できない環境では false", () => {
   const broken = { getItem: () => null, setItem: () => { throw new Error("full"); } };
   assert.equal(A.saveStore(broken, { current: null, list: [] }), false);
 });
+
+test("ほかの端末の選手データ：この端末にいない選手だけ追加する", async () => {
+  const { mergeAthletes } = await import("../js/athletes.js");
+  const local = { current: "a1", list: [{ id: "a1", name: "Manato", values: { height: "166" } }] };
+  const remote = { current: "a1", list: [{ id: "a1", name: "Manato", values: { height: "170" } }, { id: "a2", name: "嫁", values: {} }] };
+  const merged = mergeAthletes(local, remote);
+  assert.equal(merged.list.length, 2);
+  assert.equal(merged.list[0].values.height, "166"); // この端末の値はそのまま
+  assert.equal(mergeAthletes({ current: null, list: [] }, remote).current, "a1");
+  assert.equal(mergeAthletes(merged, remote), merged); // 追加がなければ同じもの
+});

@@ -29,7 +29,7 @@
         <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
         <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
-      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
+      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内。「解析 → 3Dモデル → 保存」でGitHubにも保存され、スマホなどほかの端末でも使えます）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
       <details class="sub">
         <summary>選手データのバックアップ</summary>
         <div class="row">
@@ -66,18 +66,15 @@
       <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから押してください。読み込んだ全方向を解析し、3Dモデルと改善点を作り、保存します（40秒の動画1本で数分かかります）。</p>
       <details class="sub">
         <summary>保存の設定</summary>
-        <label><input type="checkbox" id="saveVideo" checked> 動画も保存する（このブラウザ内。1本で約60〜70MB）</label><br>
+        <label><input type="checkbox" id="saveVideo"> 動画も保存する（このブラウザ内だけ。1本で約60〜70MB）</label><br>
         <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデルとストロークの区切りだけ）</label>
-        <p class="muted">GitHubにも自動保存：保存先 <span id="ghRepo"></span>。解析結果（JSON）だけを送り、動画は送りません。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
-        <div class="row">
-          <label><input type="checkbox" id="ghEnabled"> 保存のたびにGitHubへ送る</label>
-        </div>
+        <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）と選手データだけで、動画は送りません。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
           <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
           <button class="btn" id="ghTest">接続テスト</button>
         </div>
         <p id="ghNote" class="muted"></p>
-        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。</p>
+        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。保存するPCで1回だけ入れれば、以後は自動で送ります（スマホで見るだけならトークンは不要）。</p>
       </details>
 
       <div class="row">

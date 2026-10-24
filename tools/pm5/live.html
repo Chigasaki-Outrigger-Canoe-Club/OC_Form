@@ -18,6 +18,8 @@
   .stat span { display: block; color: var(--muted); font-size: 0.8rem; }
   .stat b { font-size: 1.8rem; }
   .muted { color: var(--muted); font-size: 0.85rem; }
+  .btn { display: inline-block; padding: 8px 14px; margin: 0 6px 6px 0; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; background: var(--panel); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: bold; }
   canvas { width: 100%; height: 260px; display: block; }
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--border); }
@@ -25,11 +27,12 @@
 </head>
 <body>
 <h1>PM5 リアルタイム <span id="status" class="muted">接続中…</span></h1>
-<p class="muted">
-  記録はPCのこのツールのフォルダに自動で保存されています。ここからもダウンロードできます（そこまでの分）：
-  <a href="/download/strokes">1本ごとのCSV（サイトの「Concept2（エルゴ）」で読む）</a>・
-  <a href="/download/raw">全測定値のCSV</a>
-</p>
+<div class="panel">
+  <a class="btn primary" href="/download/excel">CSVで出力（波形つき）</a>
+  <a class="btn" href="/download/strokes">サイト用CSV</a>
+  <a class="btn" href="/download/raw">全測定値CSV</a>
+  <p class="muted">ここまでに漕いだ分を出力します。「波形つき」は1本ごとの値と、力の波形（キャッチから1/64秒ごと）を列に並べた形で、Excelでそのままグラフにできます。「サイト用」はフォーム解析サイトの「Concept2（エルゴ）」欄で読む形です。記録はこのツールのフォルダにも自動で保存されています。</p>
+</div>
 
 <div class="panel stats">
   <div class="stat"><span>ペース /500m</span><b id="pace">--</b></div>

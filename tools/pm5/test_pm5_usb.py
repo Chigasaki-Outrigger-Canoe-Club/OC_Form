@@ -3,7 +3,7 @@
 import unittest
 
 import csafe_cmd
-from pm5_usb import DRIVE, StrokeRecorder, curve_stats, raw_rows, read_sample
+from pm5_usb import DRIVE, STROKE_HEADER, StrokeRecorder, curve_stats, expand_curves, raw_rows, read_sample
 
 
 def le(value, size):
@@ -73,6 +73,17 @@ class Raw(unittest.TestCase):
         self.assertEqual([r[0] for r in rows], [round(1 - 2 / 64, 3), round(1 - 1 / 64, 3), 1.0])
         self.assertEqual([r[1] for r in rows], [5, 6, 7])
         self.assertEqual(raw_rows(sample(2.0, 4))[0][:3], [2.0, "", 4])
+
+
+class Expand(unittest.TestCase):
+    def test_curve_columns(self):
+        text = ",".join(STROKE_HEADER) + "\n" + "1,0.1,4,120,200,52,140,0.4,0.7,110,77,0.06,0.2,0 50 110\n" + "2,1.2,8,120,200,52,140,0.4,0.7,90,60,0.06,0.2,0 90\n"
+        lines = expand_curves(text).strip().split("\n")
+        head = lines[0].split(",")
+        self.assertEqual(head[-3:], ["Force 0.000s (lbs)", "Force 0.016s (lbs)", "Force 0.031s (lbs)"])
+        self.assertNotIn("Force Curve", head)
+        self.assertEqual(lines[1].split(",")[-3:], ["0", "50", "110"])
+        self.assertEqual(lines[2].split(",")[-3:], ["0", "90", ""])
 
 
 if __name__ == "__main__":

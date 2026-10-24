@@ -262,17 +262,27 @@ recording = {"name": None}  # 記録中のファイル名（拡張子なし）�
 DOWNLOADS = {"/download/strokes": ".csv", "/download/raw": "_raw.csv"}
 
 
+def expand_curves(text):
+    """1本ごとのCSV → 力の波形を列に広げたCSV（Excelでそのままグラフにできる形）
+    列：1本ごとの値（波形以外）＋ 力の波形（キャッチから 0.000秒, 0.016秒, …。PM5 は 1/64 秒ごと、単位 lbs）"""
+    rows = list(csv.DictReader(text.splitlines()))
+    curves = [r.pop("Force Curve", "").split() for r in rows]
+    longest = max((len(c) for c in curves), default=0)
+    head = list(rows[0].keys()) if rows else STROKE_HEADER[:-1]
+    out = [head + [f"Force {i / RATE:.3f}s (lbs)" for i in range(longest)]]
+    out += [[r[k] for k in head] + c + [""] * (longest - len(c)) for r, c in zip(rows, curves)]
+    return "\n".join(",".join(row) for row in out) + "\n"
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in DOWNLOADS and recording["name"]:
             # 記録中のCSV（そこまでの分）をダウンロードする
             file = Path(f"{recording['name']}{DOWNLOADS[self.path]}")
-            body = file.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/csv; charset=utf-8")
-            self.send_header("Content-Disposition", f'attachment; filename="{file.name}"')
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_csv(file.name, file.read_bytes())
+        elif self.path == "/download/excel" and recording["name"]:
+            text = Path(f"{recording['name']}.csv").read_text(encoding="utf-8")
+            self.send_csv(f"{recording['name']}_波形つき.csv", ("\ufeff" + expand_curves(text)).encode("utf-8"))  # 先頭の印＝Excelで文字化けしない
         elif self.path == "/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -294,6 +304,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(body)
+
+    def send_csv(self, name, body):
+        from urllib.parse import quote
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(name)}")
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, *args):  # アクセスのたびの表示は出さない
         pass

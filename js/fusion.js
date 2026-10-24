@@ -46,10 +46,16 @@ export function smoothPhases(frames, sources = null) {
 }
 
 // 1つの関節を、各カメラの役割×信頼度（visibility）で合わせる
-// list：[{ name, f: その位相の33点, k: 大きさの調整, joints: 役割の重み }]
+// list：[{ name, f: その位相の33点, k: 大きさの調整, c: 腰の中心, joints: 役割の重み }]、base：合わせた腰の中心
 // 戻り値：{ x, y, z, v, source: { main, share, score } }
 //   score＝軸ごとの「役割×信頼度」の最大値の平均（担当カメラがよく見えていれば1に近い。補助だけなら低い）
-function fuseJoint(list, j) {
+// 腰の中心（左右の腰の中点）×大きさ。mean＝true のときは、点の一覧の平均
+function hipCenter(f, k, mean = false) {
+  const pts = mean ? f : [f[P.lHip], f[P.rHip]];
+  return Object.fromEntries(AXES.map((a) => [a, (pts.reduce((t, p) => t + p[a], 0) / pts.length) * k]));
+}
+
+function fuseJoint(list, j, base) {
   const point = { v: Math.max(...list.map((s) => s.f[j].v)) };
   const byView = Object.fromEntries(list.map((s) => [s.name, 0]));
   let score = 0;
@@ -60,12 +66,12 @@ function fuseJoint(list, j) {
     for (const s of list) {
       const role = s.joints[j][a];
       const w = role * Math.max(s.f[j].v, 0.01);
-      sum += s.f[j][a] * s.k * w; // 大きさの調整は腰の中心（x・z＝0付近）と床（y＝0）を基準に掛ける
+      sum += (s.f[j][a] * s.k - s.c[a]) * w; // 腰の中心からの位置（大きさをそろえたもの）
       weight += w;
       byView[s.name] += w;
       best = Math.max(best, role * s.f[j].v);
     }
-    point[a] = sum / weight;
+    point[a] = base[a] + sum / weight;
     score += Math.min(best, 1) / AXES.length;
   }
   const total = Object.values(byView).reduce((x, y) => x + y, 0);
@@ -271,10 +277,15 @@ export function fuseViews(reps) {
     // 位相ごと・関節ごと・軸ごとに、担当カメラを優先して合わせる。使ったカメラと信頼度も残す
     const sources = [];
     const frames = Array.from({ length: PHASES }, (_, i) => {
-      const list = used.map(([name, r]) => ({ name, f: r[side][i], k: targetTorso / r.torso, joints: r.joints })).filter((s) => s.f);
+      const list = used.map(([name, r]) => ({ name, kind: r.kind, f: r[side][i], k: targetTorso / r.torso, joints: r.joints })).filter((s) => s.f);
       sources.push(null);
       if (!list.length) return null;
-      const out = Array.from({ length: JOINT_COUNT }, (_, j) => fuseJoint(list, j));
+      // 動画ごとに床の高さの推定が違う（前の動画は足が艇に隠れ、床が約45cmずれた）。
+      // そのため各動画の点は「腰の中心からの位置」にしてから合わせ、腰の中心の位置は横の動画で決める
+      list.forEach((s) => (s.c = hipCenter(s.f, s.k)));
+      const sides = list.filter((s) => s.kind === "side");
+      const base = hipCenter((sides.length ? sides : list).map((s) => s.c), 1, true);
+      const out = Array.from({ length: JOINT_COUNT }, (_, j) => fuseJoint(list, j, base));
       sources[i] = out.map((p) => p.source);
       return out.map(({ source, ...p }) => p);
     });

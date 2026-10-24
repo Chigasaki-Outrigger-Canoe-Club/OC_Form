@@ -116,3 +116,13 @@ test("担当カメラ：手首・肘は横、肩は前・後ろ、骨盤は後�
   assert.equal(back[11].y, 1);               // 肩の高さ：担当
   assert.ok(back[23].z < 0.01);              // 奥行きは使わない
 });
+
+test("統合：動画ごとに床の高さがずれていても、腰の中心で合わせるので体の位置はずれない", () => {
+  const left = viewRepresentative({ ...makeView(Math.PI / 2, 0), name: "left" });
+  const front = viewRepresentative({ ...makeView(0, 0), name: "front" });
+  const lifted = { ...front, right: front.right.map((f) => f && f.map((p) => ({ ...p, y: p.y + 0.45 }))) }; // 前の動画の床が45cmずれた
+  const a = fuseViews({ left, front }).right.frames;
+  const b = fuseViews({ left, front: lifted }).right.frames;
+  near(a[50][P.lShoulder].y, b[50][P.lShoulder].y, 1e-9);
+  near(a[50][P.rWrist].y, b[50][P.rWrist].y, 1e-9);
+});

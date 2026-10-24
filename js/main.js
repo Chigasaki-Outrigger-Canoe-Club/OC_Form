@@ -577,7 +577,12 @@ function saveGhSettings() {
   try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
 }
 
-el("ghToken").addEventListener("change", saveGhSettings);
+// 貼り付けた時点で保存する（欄から外れるのを待たない）。次からは入力しなくてよいことを表示する
+const showTokenState = () => (el("ghTokenState").textContent = ghSettings.token
+  ? `トークン：このブラウザに保存済み（…${ghSettings.token.slice(-4)}）。次からは入力不要です`
+  : "トークン：未入力（保存するPCで1回だけ入れてください）");
+el("ghToken").addEventListener("input", () => { saveGhSettings(); showTokenState(); });
+showTokenState();
 
 el("ghTest").addEventListener("click", async () => {
   saveGhSettings();

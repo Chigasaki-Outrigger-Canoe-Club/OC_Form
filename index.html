@@ -112,8 +112,9 @@
           <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
           <button class="btn" id="ghTest">接続テスト</button>
         </div>
+        <p id="ghTokenState" class="muted small"></p>
         <p id="ghNote" class="muted"></p>
-        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。保存するPCで1回だけ入れれば、以後は自動で送ります（スマホで見るだけならトークンは不要）。</p>
+        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。保存するPC（ブラウザ）ごとに1回だけ入れれば、以後は自動で送ります。別のブラウザ・シークレットウィンドウ・履歴を消したときは、もう一度入れます（スマホで見るだけならトークンは不要）。</p>
       </details>
 
       <div class="row">

@@ -106,8 +106,8 @@ export function averageStrokes(strokes) {
 const PART_OF = (j) => (j <= 10 ? "head" : j <= 12 ? "shoulder" : j <= 14 ? "elbow" : j <= 22 ? "hand" : j <= 24 ? "hip" : "leg");
 const isLeft = (j) => (j <= 10 ? [1, 2, 3, 7, 9].includes(j) : j % 2 === 1);
 // 横（右・左）：きれいに取れるので、関節の位置は横の動画を中心に使う（カメラ側の半身を重く、反対側はやや軽く）
-// 前：シャフトの角度（shaft.js）と手首の位置だけを使う
-// 後ろ：シャフトの角度と、肘と肩の高さ（上下の位置）だけを使う
+// 前・後ろ：横の動画があるときは関節には使わず、シャフトの角度（shaft.js）だけに使う（fuseViews の SIDE_VIEWS）
+// 横の動画がないときだけ、前は手首、後ろは肘と肩の高さ（上下の位置）を使う
 // 値は部位ごとの重み。{ x, y, z } のときは軸ごと（X＝左右、Y＝上下、Z＝前後）。書いていない部位・軸は使わない（0）
 export const PART_WEIGHTS = {
   near: { head: 1, shoulder: 1, elbow: 1, hand: 1, hip: 1, leg: 1 },
@@ -186,6 +186,9 @@ export function viewRepresentative(view) {
   };
 }
 
+// 関節（3Dモデル）を作るのに使う方向。前・後ろは奥行きの推定が大きくずれ、実際と違う動きになるため
+const SIDE_VIEWS = ["left", "right"];
+
 // 方向ごとの代表ストロークを1つにまとめる
 // reps：{ left: viewRepresentative(...), back: ... }
 // 戻り値：{ right: { frames, views, strokes }, left: {...} }（その側のデータがなければ null）
@@ -197,8 +200,11 @@ export function fuseViews(reps) {
   const fuseSide = (side) => {
     const used = entries.filter(([, r]) => r[side]);
     if (!used.length) return null;
+    // 関節は横の動画だけで作る（横がその側を撮っていないときは、ある動画すべてを使う）
+    const sides = used.filter(([name]) => SIDE_VIEWS.includes(name));
+    const jointViews = sides.length ? sides : used;
     const frames = Array.from({ length: PHASES }, (_, i) => {
-      const sources = used.map(([, r]) => ({ f: r[side][i], k: targetTorso / r.torso, rel: r.reliability, joints: r.joints })).filter((s) => s.f);
+      const sources = jointViews.map(([, r]) => ({ f: r[side][i], k: targetTorso / r.torso, rel: r.reliability, joints: r.joints })).filter((s) => s.f);
       if (!sources.length) return null;
       return Array.from({ length: JOINT_COUNT }, (_, j) => {
         const point = { v: Math.max(...sources.map((s) => s.f[j].v)) };
@@ -236,6 +242,7 @@ export function fuseViews(reps) {
       shaft,
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
+      jointViews: jointViews.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),
     };
   };

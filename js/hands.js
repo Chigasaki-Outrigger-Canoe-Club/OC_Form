@@ -197,3 +197,18 @@ export function correctWorld(world, pose, hands = [], strokes = []) {
 }
 
 const average = (list) => [0, 1].map((k) => list.reduce((sum, p) => sum + p[k], 0) / list.length);
+
+// 2Dの骨格に、手の専用推定と人の補助を当てた新しい配列（画像のピクセル座標。評価・表示用。3D は correctWorld）
+export function corrected2d(pose, hands = [], strokes = []) {
+  if (!pose) return pose;
+  const fixes = manualFixes(pose, strokes);
+  const handSeries = handShiftSeries(pose, hands);
+  return pose.map((f, n) => {
+    if (!f) return f;
+    const shifts = frameShifts(handSeries, fixes, strokes, n);
+    return f.map((q, i) => {
+      const [dx, dy] = shifts[i] ?? [0, 0];
+      return { x: (q.ox ?? q.x) + dx, y: (q.oy ?? q.y) + dy, z: 0, v: shifts[i] ? Math.max(q.v, 0.9) : q.v, ...(q.src === "manual" ? { src: "manual" } : {}) };
+    });
+  });
+}

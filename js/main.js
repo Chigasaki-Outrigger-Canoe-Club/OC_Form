@@ -10,7 +10,8 @@ import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle, paddleTrack, shaftToBody } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
-import { correctWorld } from "./hands.js";
+import { correctWorld, corrected2d } from "./hands.js";
+import { qualityTable } from "./quality.js";
 import { cleanShafts } from "./shaft.js";
 import { compressVideo } from "./compress.js";
 import { smoothFrames } from "./smooth.js";
@@ -51,6 +52,17 @@ const data = () => views[currentView];
 // 画像から見つけたシャフトの向きを選手基準にしたもの（前・後ろの動画。「動画と3Dを並べる」で使う）
 const toShaftBody = (d) => shaftToBody(d.world, d.shaft);
 const shownShaft = (d) => cleanShafts(d.shaft); // 動画に描く分（見つけ違いは外す）
+
+// 推定から作る値（3D・シャフト・処理後の2D）をまとめて作り直す
+function refreshDerived(d) {
+  d.shaftBody = toShaftBody(d);
+  d.shaftShown = shownShaft(d);
+  d.body = toBody(d);
+  d.processed2d = null; // 処理後の2D（評価・表示用）は必要になったときに作る（processed2d）
+}
+
+// 処理後の2D：手の専用推定・人の補助を当て、ぶれを取ったもの（3Dと同じ処理の2D版）
+const processed2d = (d) => (d.processed2d ??= d.pose ? smoothFrames(corrected2d(d.pose, d.hands ?? [], d.strokes ?? []), d.fps) : null);
 
 // 3Dの作り方：world を2Dの骨格（手の専用推定・人の補助で直したもの）に合わせる → ぶれを取る → 選手基準に変換
 //   → 漕ぎとしてありえない形を直す（constraints.js）→ 脚を安定させる
@@ -230,6 +242,7 @@ function selectView(view) {
   showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
     : d.url ? "読み込み中…"
     : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
+  renderQuality();
   renderStrokes();
   updateDisplay();
 }
@@ -402,9 +415,7 @@ async function analyzeCurrent(label) {
   d.spine = spine;
   d.hands = hands;
   d.shaft = shaft;
-  d.shaftBody = toShaftBody(d);
-  d.shaftShown = shownShaft(d);
-  d.body = toBody(d);
+  refreshDerived(d);
   d.strokes = refineToCatch(detectStrokes(frames, fps()), d.body); // 区切り＝キャッチ（推定）
   return true;
 }
@@ -657,14 +668,13 @@ async function openSession(id) {
       spine: r.spine ?? null,
       hands: r.hands ?? null,
       shaft: r.shaft ?? null,
+      truth: r.truth ?? null,
       strokes: r.strokes,
       width: r.video.width ?? null,
       height: r.video.height ?? null,
       githubVideo: r.video.github ?? null,
     };
-    views[view].body = toBody(views[view]);
-    views[view].shaftBody = toShaftBody(views[view]);
-    views[view].shaftShown = shownShaft(views[view]);
+    refreshDerived(views[view]);
   }
   sessionId = id;
   sessionDate = s.date;
@@ -924,15 +934,24 @@ function renderEditor() {
 let dragging = null;
 
 overlay.addEventListener("pointerdown", (e) => {
-  const lm = data()?.pose?.[currentFrame()];
+  const d = data();
+  const lm = d?.pose?.[currentFrame()];
   if (!lm || isPlaying() || analyzing) return;
-  dragging = nearestJoint(lm, toVideoPoint(overlay, e));
+  // 正解を付けるときは、正解の点（なければ推定の点）を選ぶ
+  const truth = truthMode ? { ...lm, ...(d.truth?.[currentFrame()] ?? {}) } : lm;
+  dragging = nearestJoint(truth, toVideoPoint(overlay, e));
   if (dragging != null) overlay.setPointerCapture(e.pointerId);
 });
 
 overlay.addEventListener("pointermove", (e) => {
   if (dragging == null) return;
   const p = toVideoPoint(overlay, e);
+  if (truthMode) {
+    // 正解：推定とは別に保存する（推定・3Dは変えない）
+    const d = data();
+    ((d.truth ??= {})[currentFrame()] ??= {})[dragging] = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+    return updateDisplay();
+  }
   const frame = data().pose[currentFrame()];
   const old = frame[dragging];
   // ox・oy＝元の推定の位置（何度動かしても最初の推定を残す。3Dへは「元からの移動量」を移す）
@@ -985,12 +1004,52 @@ function renderAssist() {
   }
 }
 
+// ================= 推定の確認（品質の数字・正解フレーム） =================
+let truthMode = false;
+el("truthMode").addEventListener("click", () => {
+  truthMode = !truthMode;
+  el("truthMode").classList.toggle("active", truthMode);
+  el("truthMode").textContent = truthMode ? "正解を付ける：オン（もう一度押すと終了）" : "正解を付ける";
+  if (truthMode) { el("overlayProcessed").checked = false; showDisplay("video"); }
+  updateDisplay();
+});
+el("truthClear").addEventListener("click", () => {
+  const d = data();
+  if (d?.truth?.[currentFrame()] && confirm("このフレームの正解を消しますか？")) { delete d.truth[currentFrame()]; renderQuality(); updateDisplay(); }
+});
+["overlayProcessed", "overlayConfidence"].forEach((id) => el(id).addEventListener("change", updateDisplay));
+el("qualityMake").addEventListener("click", renderQuality);
+
+// 今の方向の品質の表（生の推定 → 処理後）
+function renderQuality() {
+  const d = data();
+  const body = el("qualityList");
+  body.innerHTML = "";
+  if (!d?.pose) { el("qualityNote").textContent = "この方向はまだ骨格推定していません"; return; }
+  const truth = d.truth ?? {};
+  const rows = qualityTable(d.pose, processed2d(d), d.strokes, truth);
+  const num = (v, unit = "", digits = 1) => (v == null ? "--" : `${v.toFixed(digits)}${unit}`);
+  const pair = (a, b, unit, digits) => `${num(a, unit, digits)} → ${num(b, unit, digits)}`;
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const low = r.raw.low == null ? "--" : `${Math.round(r.raw.low * 100)}%`;
+    tr.innerHTML = `<td>${r.label}</td><td>${num(r.raw.vis, "", 2)}<br><span class="muted small">0.5未満 ${low}</span></td>`
+      + `<td>${r.raw.jumps} → ${r.processed.jumps}</td><td>${pair(r.raw.jitter, r.processed.jitter, "%", 2)}</td>`
+      + `<td>${pair(r.raw.spread, r.processed.spread, "%")}</td>`
+      + `<td>${r.raw.truthCount ? `${pair(r.raw.error, r.processed.error, "%")}<br><span class="muted small">${r.raw.truthCount}フレーム</span>` : "--"}</td>`;
+    body.appendChild(tr);
+  }
+  const n = Object.keys(truth).length;
+  el("qualityNote").textContent = `${VIEW_LABELS[currentView]}：${d.pose.length}フレーム、ストローク${Math.max(0, d.strokes.length - 1)}本、正解フレーム${n}`;
+}
+
 // 指を離したら、直した点を3Dに反映して作り直す（前後のフレームにも少しずつ広げる）
 overlay.addEventListener("pointerup", () => {
   if (dragging == null) return;
   dragging = null;
   const d = data();
-  d.body = toBody(d);
+  if (truthMode) return renderQuality();
+  refreshDerived(d);
   dataChanged();
   renderAssist();
 });
@@ -1060,7 +1119,9 @@ function updateDisplay() {
   seek.max = d ? totalFrames() - 1 : 0;
   seek.value = frame;
   el("play").textContent = isPlaying() ? "⏸ 停止" : "▶ 再生";
-  drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null, hasVideo() ? d?.hands?.[frame] : null, hasVideo() ? d?.shaftShown?.[frame] : null);
+  const shown = !hasVideo() || !d?.pose ? null : el("overlayProcessed").checked ? processed2d(d)?.[frame] : d.pose[frame];
+  drawSkeleton(overlay, shown ?? null, hasVideo() ? d?.hands?.[frame] : null, hasVideo() ? d?.shaftShown?.[frame] : null,
+    { byConfidence: el("overlayConfidence").checked, truth: hasVideo() ? d?.truth?.[frame] : null });
   // 代表ストロークの再生中は動画の操作を隠す（動画とは別に動くため）
   el("videoControls").hidden = loopVisible();
   el("loopControls").hidden = !loopVisible();

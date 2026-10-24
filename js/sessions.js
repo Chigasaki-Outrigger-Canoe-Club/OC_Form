@@ -21,6 +21,7 @@ export function viewToRecord(d) {
     spine: d.spine ?? null,
     hands: d.hands ?? null,
     shaft: d.shaft ?? null,
+    truth: d.truth ?? null, // 人が付けた正解（評価用）：{ フレーム: { 関節番号: { x, y } } }（ピクセル）
     strokes: d.strokes ?? [],
   };
 }
@@ -51,7 +52,7 @@ export const sortSessions = (list) => [...list].sort((a, b) =>
 // 書き出す中身（セッションの記録に形式名と説明を付ける）。動画は含まない
 // raw が false なら、全フレームのデータ（pose・world・spine・hands）を省き、平均の3Dモデルとストロークだけにする
 export function buildSessionFile(session, { raw = false } = {}) {
-  const views = raw ? session.views : Object.fromEntries(Object.entries(session.views).map(([v, r]) => [v, { video: r.video, strokes: r.strokes }]));
+  const views = raw ? session.views : Object.fromEntries(Object.entries(session.views).map(([v, r]) => [v, { video: r.video, strokes: r.strokes, truth: r.truth ?? null }]));
   return {
     format: "oc-form-session",
     version: 1,
@@ -60,6 +61,7 @@ export function buildSessionFile(session, { raw = false } = {}) {
       model: "漕ぐ側ごとの代表ストローク（0〜100%の101点）。選手基準の3D座標（X左・Y上・Z前、単位およそm）。spine＝背中の膨らみ、duration＝平均ストローク時間（秒）",
       pose: "画像上のピクセル座標（左上が原点、yは下向き）。v＝MediaPipeの信頼度（0〜1）。src：est＝推定値、manual＝手動修正（ox・oy＝直す前の推定の位置）",
       shaft: "画像から見つけた木のシャフト（前・後ろの動画）。フレームごとに { dir: 画像上の向き（下向き）, point: 線の上の1点（ピクセル）, s: 確かさ }",
+      truth: "人が付けた正解（評価用）。{ フレーム番号: { 関節番号: { x, y } } }（ピクセル座標）",
       hands: "手の専用推定（Hand Landmarker）。フレームごとに [{ s: 信頼度, p: [手首, 小指の付け根, 人差し指の付け根] }]（ピクセル座標）",
       world: "MediaPipeの3D推定座標（腰の中心が原点、単位およそm、x右・y下・z奥）。1台のカメラからの推定値",
       strokes: "区切り＝キャッチ（力を入れ始める位置。自動推定または手動設定）。side＝そのストロークの漕ぐ側",

@@ -11,7 +11,7 @@ const view = (pose) => ({
 
 test("保存する形：動画本体・表示用の値は含めない", () => {
   const r = viewToRecord(view([[1]]));
-  assert.deepEqual(Object.keys(r).sort(), ["hands", "pose", "shaft", "spine", "strokes", "video", "world"]);
+  assert.deepEqual(Object.keys(r).sort(), ["hands", "pose", "shaft", "spine", "strokes", "truth", "video", "world"]);
   assert.equal(r.video.size, 1000);
   assert.equal(r.video.codec, "hvc1");
   assert.equal(JSON.stringify(r).includes("blob:"), false);
@@ -47,12 +47,12 @@ test("ファイル：書き出し→読み込みで元に戻る、形式が違�
   assert.throws(() => parseSessionFile("not json"));
 });
 
-test("ファイル：既定では平均モデルとストロークだけ（全フレームのデータは省く）", () => {
+test("ファイル：既定では平均モデル・ストローク・正解だけ（全フレームのデータは省く）", () => {
   const model = { right: { frames: [[1]] }, left: null };
   const s = buildSession({ athlete, date: "2026-10-20", memo: "m", views: { left: view([[1]]) }, model });
   const small = buildSessionFile(s);
   assert.deepEqual(small.model, model);
-  assert.deepEqual(Object.keys(small.views.left), ["video", "strokes"]);
+  assert.deepEqual(Object.keys(small.views.left), ["video", "strokes", "truth"]);
   const full = buildSessionFile(s, { raw: true });
   assert.deepEqual(full.views.left.pose, [[1]]);
 });

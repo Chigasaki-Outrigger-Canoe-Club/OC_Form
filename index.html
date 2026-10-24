@@ -181,6 +181,29 @@
         </table>
       </div>
 
+      <!-- 推定の確認：品質の数字と正解フレーム（推定そのものは変えない） -->
+      <details class="sub" id="qualityBox">
+        <summary>推定の確認（品質の数字・正解フレーム）</summary>
+        <div class="row">
+          <label><input type="checkbox" id="overlayProcessed"> 動画に処理後の骨格を重ねる（オフ＝生の推定）</label>
+          <label><input type="checkbox" id="overlayConfidence"> 関節を信頼度で色分け（緑0.8以上・黄0.5〜0.8・赤0.5未満）</label>
+        </div>
+        <div class="row">
+          <button class="btn" id="truthMode">正解を付ける</button>
+          <button class="btn" id="truthClear">このフレームの正解を消す</button>
+          <button class="btn" id="qualityMake">表を更新</button>
+        </div>
+        <p class="muted">「正解を付ける」をオンにして、動画の上の点を実際の関節の位置へドラッグすると、そのフレームの正解（緑の十字）になります。推定や3Dは変わりません。キャッチ・ドライブ・フィニッシュ・リカバリーなど、ばらけた場面で数フレームずつ付けると、正解とのずれが比べられます。</p>
+        <p id="qualityNote" class="muted"></p>
+        <div class="scroll">
+          <table class="table">
+            <thead><tr><th>関節</th><th>信頼度（中央値）</th><th>跳び（回）<br>生→処理後</th><th>ぶれ<br>生→処理後</th><th>同じ位置のばらつき<br>生→処理後</th><th>正解とのずれ<br>生→処理後</th></tr></thead>
+            <tbody id="qualityList"></tbody>
+          </table>
+        </div>
+        <p class="muted">長さは胴の長さ（肩の中点〜腰の中点）に対する割合。跳び＝1フレームで胴の長さの25%以上動いた回数（単発の誤検出の目安）。ぶれ＝位置の2階差分の中央値（細かい揺れ。素早い動きでも大きくなる）。同じ位置のばらつき＝ストロークの同じ位置（0〜100%を5%ごと）での位置のばらつき（推定のぶれとフォームのばらつきの両方を含む）。正解とのずれ以外は「正しさ」ではなく「安定さ」の目安です。この版の MediaPipe（ブラウザ版）は presence を出さないため、信頼度は visibility です。</p>
+      </details>
+
       <!-- ストロークの区切りの編集（ストローク欄の「編集する」で表示） -->
       <div id="strokeEditor" class="sub editor" hidden>
         <div class="row">

@@ -17,13 +17,16 @@ export const BONES = [
 export const JOINTS = Object.values(P);
 
 const LEFT = new Set([P.lEar, P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
-export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b", hand: "#ffffff", shaft: "#ff2bd6" };
+export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b", hand: "#ffffff", shaft: "#ff2bd6", truth: "#22e06b" };
+// 信頼度で色分けするとき：0.8以上＝緑、0.5〜0.8＝黄、0.5未満＝赤
+const confidenceColor = (v) => (v >= 0.8 ? "#22c55e" : v >= 0.5 ? "#facc15" : "#ef4444");
 
 export const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);
 
 // hands：手の専用推定（そのフレーム）。白い輪で、手首・小指と人差し指の付け根を描く
 // shaft：画像から見つけたシャフト（そのフレーム）。ピンクの点線で描く
-export function drawSkeleton(canvas, lm, hands = null, shaft = null) {
+// options.byConfidence：関節の点を信頼度で色分けする、options.truth：人が付けた正解 { 関節番号: {x,y} }（緑の十字）
+export function drawSkeleton(canvas, lm, hands = null, shaft = null, options = {}) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!lm) return;
@@ -42,7 +45,7 @@ export function drawSkeleton(canvas, lm, hands = null, shaft = null) {
   for (const i of JOINTS) {
     const p = lm[i];
     ctx.globalAlpha = p.v < MIN_VISIBILITY ? 0.3 : 1;
-    ctx.fillStyle = p.src === "manual" ? COLOR.manual : colorOf(i);
+    ctx.fillStyle = p.src === "manual" ? COLOR.manual : options.byConfidence ? confidenceColor(p.v) : colorOf(i);
     ctx.beginPath();
     ctx.arc(p.x, p.y, size * 2, 0, Math.PI * 2);
     ctx.fill();
@@ -57,6 +60,15 @@ export function drawSkeleton(canvas, lm, hands = null, shaft = null) {
     ctx.lineTo(shaft.point[0] + shaft.dir[0] * len, shaft.point[1] + shaft.dir[1] * len);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+  ctx.strokeStyle = COLOR.truth;
+  ctx.lineWidth = size;
+  for (const t of Object.values(options.truth ?? {})) {
+    const r = size * 4;
+    ctx.beginPath();
+    ctx.moveTo(t.x - r, t.y); ctx.lineTo(t.x + r, t.y);
+    ctx.moveTo(t.x, t.y - r); ctx.lineTo(t.x, t.y + r);
+    ctx.stroke();
   }
   ctx.strokeStyle = COLOR.hand;
   for (const h of hands ?? []) {

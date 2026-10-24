@@ -103,14 +103,13 @@ export function averageStrokes(strokes) {
 // 部位：顔、肩、肘、手（手首・指）、腰、脚（膝から下）。MediaPipe の番号で、奇数＝左半身・偶数＝右半身
 const PART_OF = (j) => (j <= 10 ? "head" : j <= 12 ? "shoulder" : j <= 14 ? "elbow" : j <= 22 ? "hand" : j <= 24 ? "hip" : "leg");
 const isLeft = (j) => (j <= 10 ? [1, 2, 3, 7, 9].includes(j) : j % 2 === 1);
-// 前：両手（シャフトの角度）・肩・左右の傾きが得意。脚はエルゴに隠れる
-// 後ろ：骨盤・肩の高さ・左右の傾きが得意。手は体に隠れやすい
-// 横：カメラ側の半身はきれいに取れる。反対側（上の手の側）は隠れて弱い
+// 横（右・左）：きれいに取れるので、体全体の平均は主に横の動画を使う（カメラ側の半身を重く、反対側はやや軽く）
+// 前・後ろ：シャフトと手の角度（両手の位置）を中心に使い、ほかの部位はほとんど使わない
 export const PART_WEIGHTS = {
-  front: { head: 1, shoulder: 1, elbow: 1, hand: 1.5, hip: 0.6, leg: 0.2 },
-  back: { head: 0.5, shoulder: 1.5, elbow: 0.6, hand: 0.3, hip: 1.5, leg: 0.2 },
   near: { head: 1, shoulder: 1, elbow: 1, hand: 1, hip: 1, leg: 1 },
-  far: { head: 1, shoulder: 0.4, elbow: 0.3, hand: 0.3, hip: 0.5, leg: 0.3 },
+  far: { head: 1, shoulder: 0.6, elbow: 0.5, hand: 0.5, hip: 0.7, leg: 0.6 },
+  front: { head: 0.1, shoulder: 0.2, elbow: 0.5, hand: 1.5, hip: 0.1, leg: 0.05 },
+  back: { head: 0.1, shoulder: 0.2, elbow: 0.4, hand: 1, hip: 0.1, leg: 0.05 },
 };
 
 // カメラの方向（選手から見た向き。X左・Z前）→ 33点それぞれの重み

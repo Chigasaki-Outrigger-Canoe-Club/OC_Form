@@ -113,3 +113,13 @@ test("漕ぐ側ごとの平均ストローク時間", async () => {
   near(d.right, (1 + 1.2) / 2); near(d.left, (1.1 + 1.2) / 2);
   assert.deepEqual(sideDurations([]), { right: null, left: null });
 });
+
+test("部位ごとの重み：横からはカメラ側の半身を重く、前からは手を重く", async () => {
+  const { jointWeights, PART_WEIGHTS } = await import("../js/fusion.js");
+  const right = jointWeights({ x: -1, y: 0, z: 0 }); // カメラが選手の右側
+  assert.equal(right[16], PART_WEIGHTS.near.hand);   // 右手首
+  assert.equal(right[15], PART_WEIGHTS.far.hand);    // 左手首（反対側）
+  const front = jointWeights({ x: 0, y: 0, z: 1 });
+  assert.equal(front[15], PART_WEIGHTS.front.hand);
+  assert.equal(front[27], PART_WEIGHTS.front.leg);
+});

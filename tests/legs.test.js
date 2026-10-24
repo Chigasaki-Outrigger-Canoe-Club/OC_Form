@@ -59,3 +59,18 @@ test("人が見つからないフレームはそのまま", () => {
   assert.equal(stabilizeLegs(frames)[5], null);
   assert.deepEqual(stabilizeLegs([null, null]), [null, null]);
 });
+
+test("足の置き方：かかと同士は拳1個分、膝は内側に入れない", async () => {
+  const { setFeet, HEEL_GAP } = await import("../js/legs.js");
+  const f = Array.from({ length: 33 }, () => ({ x: 0, y: 0.5, z: 0, v: 1 }));
+  f[23] = { x: 0.1, y: 0.5, z: 0, v: 1 };   // 左の股関節
+  f[24] = { x: -0.1, y: 0.5, z: 0, v: 1 };  // 右の股関節
+  f[25] = { x: -0.02, y: 0.6, z: 0.3, v: 1 }; // 左膝が内側（右寄り）に入っている
+  f[26] = { x: -0.15, y: 0.6, z: 0.3, v: 1 };
+  for (const [i, x] of [[27, 0.01], [29, 0.01], [31, 0.01], [28, -0.01], [30, -0.01], [32, -0.01]]) f[i] = { x, y: 0.1, z: 0.6, v: 1 };
+  const [out] = setFeet([f]);
+  assert.ok(Math.abs(out[29].x - out[30].x - HEEL_GAP) < 1e-9);
+  assert.ok(Math.abs(out[27].x - out[29].x) < 1e-9); // 足首もかかとと一緒に動く
+  assert.ok(out[25].x >= 0.05 - 1e-9);               // 左膝は股関節〜足首の線より外（左）
+  assert.equal(out[26].x, -0.15);                    // 右膝はもともと外側 → そのまま
+});

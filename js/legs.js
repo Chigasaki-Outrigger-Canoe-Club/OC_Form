@@ -8,6 +8,7 @@
 //   2. 大腿（股関節〜膝）と下腿（膝〜足首）の長さは変わらない
 //      → 膝は「股関節と足首から決まる円」の上にある。推定した膝に最も近い円上の点を使う
 //   その後、膝を前後2フレームで平均し、もう一度円の上に戻す（細かい揺れを抑える）
+// 全方向を合わせたモデルには、さらに足の置き方（setFeet）を当てはめる
 
 import { P } from "./angles.js";
 
@@ -68,4 +69,31 @@ export function stabilizeLegs(frames) {
     out.forEach((f, i) => f && (f[knee] = { ...placeKnee(f[hip], f[ankle], smoothed[i], thigh, shin), v: f[knee].v }));
   }
   return out;
+}
+
+// ---- 足の置き方（全方向を合わせたモデル用） ----
+// エルゴでの足の置き方：両足は前でそろえ、かかと同士は拳1個分（約10cm）離す。内股にはならない
+export const HEEL_GAP = 0.1; // m（拳1個分）
+const HEEL = { left: 29, right: 30 };
+const SIDE_SIGN = { left: 1, right: -1 }; // X＝選手の左が＋
+
+// frames：選手基準の3D座標（null はそのまま）
+// 1. かかとの間を HEEL_GAP にし、足首・つま先も同じだけ左右にずらす（高さ・前後はそのまま）
+// 2. 膝が「股関節と足首を結ぶ線」より内側に入らないようにする（内股にしない）
+export function setFeet(frames) {
+  return frames.map((f) => {
+    if (!f) return f;
+    const out = f.map((p) => ({ ...p }));
+    const center = (f[HEEL.left].x + f[HEEL.right].x) / 2;
+    for (const side of ["left", "right"]) {
+      const shift = center + (SIDE_SIGN[side] * HEEL_GAP) / 2 - f[HEEL[side]].x;
+      for (const i of FOOT[side]) out[i].x += shift;
+      const { hip, knee, ankle } = LEG[side];
+      // 膝が股関節〜足首の前後の何割の位置か（座っているので膝は股関節より高い。高さではなく前後で測る）
+      const t = (out[knee].z - out[hip].z) / ((out[ankle].z - out[hip].z) || 1);
+      const lineX = out[hip].x + (out[ankle].x - out[hip].x) * Math.min(Math.max(t, 0), 1);
+      if ((out[knee].x - lineX) * SIDE_SIGN[side] < 0) out[knee].x = lineX; // 内側に入っていたら線の上へ
+    }
+    return out;
+  });
 }

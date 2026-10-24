@@ -17,11 +17,12 @@ export const BONES = [
 export const JOINTS = Object.values(P);
 
 const LEFT = new Set([P.lEar, P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
-export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b" };
+export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b", hand: "#ffffff" };
 
 export const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);
 
-export function drawSkeleton(canvas, lm) {
+// hands：手の専用推定（そのフレーム）。白い輪で、手首・小指と人差し指の付け根を描く
+export function drawSkeleton(canvas, lm, hands = null) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!lm) return;
@@ -46,6 +47,14 @@ export function drawSkeleton(canvas, lm) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = COLOR.hand;
+  for (const h of hands ?? []) {
+    for (const [x, y] of h.p) {
+      ctx.beginPath();
+      ctx.arc(x, y, size * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
 }
 
 // 画面上のマウス位置 → 動画のピクセル座標（object-fit: contain の余白を考慮）

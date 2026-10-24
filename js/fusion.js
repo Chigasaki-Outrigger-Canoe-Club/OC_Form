@@ -8,10 +8,13 @@
 //      重み＝MediaPipeの信頼度 ×「軸ごとの見やすさ」
 //      見やすさ：カメラの奥行き方向の軸は低く（1台のカメラでは奥行きの精度が低いため）、
 //      画面に平行な軸は高くする。 reliability(軸) = 1 − 0.8 ×（カメラ方向の成分）²
+//      さらに「部位ごとの得意・不得意」（jointWeights）を掛ける。向きはカメラの方向から自動で決める
+//   4. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
 // 結果は「同じ漕ぎ方を繰り返している」と仮定した推定値で、特定の1ストロークの再現ではない。
 
 import { P } from "./angles.js";
 import { cameraDirection, median } from "./body3d.js";
+import { setFeet } from "./legs.js";
 
 export const PHASES = 101; // 0%, 1%, …, 100%
 const DEPTH_PENALTY = 0.8;
@@ -82,6 +85,29 @@ export function averageStrokes(strokes) {
   });
 }
 
+// ---- 部位ごとの得意・不得意（方向ごと） ----
+// 部位：顔、肩、肘、手（手首・指）、腰、脚（膝から下）。MediaPipe の番号で、奇数＝左半身・偶数＝右半身
+const PART_OF = (j) => (j <= 10 ? "head" : j <= 12 ? "shoulder" : j <= 14 ? "elbow" : j <= 22 ? "hand" : j <= 24 ? "hip" : "leg");
+const isLeft = (j) => (j <= 10 ? [1, 2, 3, 7, 9].includes(j) : j % 2 === 1);
+// 前：両手（シャフトの角度）・肩・左右の傾きが得意。脚はエルゴに隠れる
+// 後ろ：骨盤・肩の高さ・左右の傾きが得意。手は体に隠れやすい
+// 横：カメラ側の半身はきれいに取れる。反対側（上の手の側）は隠れて弱い
+export const PART_WEIGHTS = {
+  front: { head: 1, shoulder: 1, elbow: 1, hand: 1.5, hip: 0.6, leg: 0.2 },
+  back: { head: 0.5, shoulder: 1.5, elbow: 0.6, hand: 0.3, hip: 1.5, leg: 0.2 },
+  near: { head: 1, shoulder: 1, elbow: 1, hand: 1, hip: 1, leg: 1 },
+  far: { head: 1, shoulder: 0.4, elbow: 0.3, hand: 0.3, hip: 0.5, leg: 0.3 },
+};
+
+// カメラの方向（選手から見た向き。X左・Z前）→ 33点それぞれの重み
+export function jointWeights(cam) {
+  return Array.from({ length: JOINT_COUNT }, (_, j) => {
+    if (Math.abs(cam.z) >= Math.abs(cam.x)) return PART_WEIGHTS[cam.z > 0 ? "front" : "back"][PART_OF(j)];
+    const nearLeft = cam.x > 0; // カメラが選手の左側
+    return PART_WEIGHTS[isLeft(j) === nearLeft ? "near" : "far"][PART_OF(j)];
+  });
+}
+
 // 1方向分の代表ストローク { right, left, spine, counts, reliability, sideWeight, torso }
 // view：{ body, world, strokes, spine }（spine＝フレームごとの背中の膨らみ。なければ省略可）
 export function viewRepresentative(view) {
@@ -102,6 +128,7 @@ export function viewRepresentative(view) {
     spine: { right: spines.right.length ? averageSeries(spines.right) : null, left: spines.left.length ? averageSeries(spines.left) : null },
     counts: { right: groups.right.length, left: groups.left.length },
     reliability,
+    joints: jointWeights(cam),
     // 背中の輪郭は横から撮ったときだけ意味がある。横向きの度合い＝カメラ方向の左右成分の2乗
     sideWeight: cam.x ** 2,
     camera: cam,
@@ -121,7 +148,7 @@ export function fuseViews(reps) {
     const used = entries.filter(([, r]) => r[side]);
     if (!used.length) return null;
     const frames = Array.from({ length: PHASES }, (_, i) => {
-      const sources = used.map(([, r]) => ({ f: r[side][i], k: targetTorso / r.torso, rel: r.reliability })).filter((s) => s.f);
+      const sources = used.map(([, r]) => ({ f: r[side][i], k: targetTorso / r.torso, rel: r.reliability, joints: r.joints })).filter((s) => s.f);
       if (!sources.length) return null;
       return Array.from({ length: JOINT_COUNT }, (_, j) => {
         const point = { v: Math.max(...sources.map((s) => s.f[j].v)) };
@@ -129,7 +156,7 @@ export function fuseViews(reps) {
           let sum = 0;
           let weight = 0;
           for (const s of sources) {
-            const w = Math.max(s.f[j].v, 0.01) * s.rel[a];
+            const w = Math.max(s.f[j].v, 0.01) * s.rel[a] * (s.joints?.[j] ?? 1);
             // 大きさの調整は腰の中心（x・z＝0付近）と床（y＝0）を基準に掛ける
             sum += s.f[j][a] * s.k * w;
             weight += w;
@@ -146,7 +173,7 @@ export function fuseViews(reps) {
       return total ? [0, 1, 2].map((k) => src.reduce((sum, x) => sum + x.v[k] * x.w, 0) / total) : null;
     });
     return {
-      frames,
+      frames: setFeet(frames),
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),

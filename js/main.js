@@ -10,6 +10,8 @@ import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
+import { correctWorld } from "./hands.js";
+import { suggestFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
 import { detectDrive, refineToCatch, releaseFrame } from "./drive.js";
@@ -30,7 +32,8 @@ const SIDE_LABEL = { right: "右漕ぎ", left: "左漕ぎ", all: "全体" };
 // 方向ごとのデータ { left: { file, url, name, fps, fpsSource, codec, pose, world, spine, body, strokes }, ... }
 //   file・url：動画（動画なしの過去データでは null）
 //   pose＝2D画像座標、world＝MediaPipeの3D推定、spine＝シルエットから測った背中の膨らみ
-//   body＝worldを選手基準に変換し、足首を固定・膝を拘束した座標（toBody で作る）
+//   hands＝手の専用推定（2D）
+//   body＝worldを手の推定・人の補助で直し、選手基準に変換し、足首を固定・膝を拘束した座標（toBody で作る）
 const views = {};
 let currentView = "left";
 let analyzing = false;
@@ -41,7 +44,8 @@ let sessionId = null;  // 表示中の過去データのID（新しいデータ�
 let sessionDate = null;
 
 const data = () => views[currentView];
-const toBody = (world) => (world ? stabilizeLegs(toBodyFrame(world)) : null);
+// 手の専用推定と人の補助で world を直してから、選手基準に変換する
+const toBody = (d) => (d.world ? stabilizeLegs(toBodyFrame(correctWorld(d.world, d.pose, d.hands ?? []))) : null);
 const today = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD
 
 // ================= 再生位置（動画があれば動画、なければ解析結果のフレーム） =================
@@ -222,6 +226,7 @@ function selectView(view) {
   showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
     : d.url ? "読み込み中…"
     : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
+  renderAssist();
   renderStrokes();
   updateDisplay();
 }
@@ -371,7 +376,7 @@ async function analyzeCurrent(label) {
   if (!video.videoWidth) { showStatus(playbackProblem()); runStatus(`${label}：動画を表示できないため解析できません`); return false; }
   stopRequested = false;
   const started = performance.now();
-  const { frames, world, spine } = await analyzeVideo(video, d.file, fps(), (done, total, method) => {
+  const { frames, world, spine, hands } = await analyzeVideo(video, d.file, fps(), (done, total, method) => {
     const sec = (performance.now() - started) / 1000;
     runStatus(`${label}… ${done} / ${total} フレーム（${method}・${sec.toFixed(0)}秒、1コマ ${(sec / done).toFixed(2)}秒）`);
   }, () => stopRequested);
@@ -379,7 +384,8 @@ async function analyzeCurrent(label) {
   d.pose = frames;
   d.world = world;
   d.spine = spine;
-  d.body = toBody(world);
+  d.hands = hands;
+  d.body = toBody(d);
   d.strokes = refineToCatch(detectStrokes(frames, fps()), d.body); // 区切り＝キャッチ（推定）
   return true;
 }
@@ -592,9 +598,10 @@ async function openSession(id) {
       pose: r.pose,
       world: r.world,
       spine: r.spine ?? null,
-      body: toBody(r.world),
+      hands: r.hands ?? null,
       strokes: r.strokes,
     };
+    views[view].body = toBody(views[view]);
   }
   sessionId = id;
   sessionDate = s.date;
@@ -835,11 +842,44 @@ overlay.addEventListener("pointerdown", (e) => {
 overlay.addEventListener("pointermove", (e) => {
   if (dragging == null) return;
   const p = toVideoPoint(overlay, e);
-  data().pose[currentFrame()][dragging] = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, v: 1, src: "manual" };
+  const frame = data().pose[currentFrame()];
+  const old = frame[dragging];
+  // ox・oy＝元の推定の位置（何度動かしても最初の推定を残す。3Dへは「元からの移動量」を移す）
+  frame[dragging] = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, v: 1, src: "manual", ox: old.ox ?? old.x, oy: old.oy ?? old.y };
   updateDisplay();
 });
 
-overlay.addEventListener("pointerup", () => (dragging = null));
+// ================= 骨格推定の補助（自信のないフレームを人が直す） =================
+el("assistMake").addEventListener("click", () => {
+  const d = data();
+  if (!d?.pose) return alert("この方向はまだ解析していません");
+  d.assist = suggestFrames(d.pose, d.hands, d.strokes, d.fps);
+  renderAssist();
+});
+
+function renderAssist() {
+  const d = data();
+  const body = el("assistList");
+  body.innerHTML = "";
+  for (const [n, a] of (d?.assist ?? []).entries()) {
+    const fixed = d.pose[a.frame].some((p) => p.src === "manual");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${n + 1}</td><td>${formatTime(a.frame / d.fps)}</td><td>${a.weak.join("・") || "全体を確認"}</td>`
+      + `<td><button class="btn small">このフレームへ</button> ${fixed ? '<span class="muted">直した</span>' : ""}</td>`;
+    tr.querySelector("button").addEventListener("click", () => { showDisplay("video"); goToFrame(a.frame); });
+    body.appendChild(tr);
+  }
+}
+
+// 指を離したら、直した点を3Dに反映して作り直す（前後のフレームにも少しずつ広げる）
+overlay.addEventListener("pointerup", () => {
+  if (dragging == null) return;
+  dragging = null;
+  const d = data();
+  d.body = toBody(d);
+  dataChanged();
+  renderAssist();
+});
 
 // ================= 表示の更新 =================
 // 3Dビューに渡す内容（現在の骨格・パドル・軌跡）
@@ -878,7 +918,7 @@ function update3d(d, frame) {
       range = d.body.slice(start, frame + 1);
       drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame), side)?.mask.slice(0, range.length) ?? [];
     }
-    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定` : "";
+    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定。1方向だけの推定なので、奥行きや隠れた側の手足はずれやすく、参考程度です。フォームの見比べには「3D：平均の漕ぎ」（全方向の得意なところを合わせたもの）を使ってください` : "";
   }
 
   const trails = [];
@@ -898,7 +938,7 @@ function updateDisplay() {
   seek.max = d ? totalFrames() - 1 : 0;
   seek.value = frame;
   el("play").textContent = isPlaying() ? "⏸ 停止" : "▶ 再生";
-  drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null);
+  drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null, hasVideo() ? d?.hands?.[frame] : null);
   // 代表ストロークの再生中は動画の操作を隠す（動画とは別に動くため）
   el("videoControls").hidden = loopVisible();
   el("loopControls").hidden = !loopVisible();

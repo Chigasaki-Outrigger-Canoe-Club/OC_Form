@@ -11,7 +11,7 @@ const view = (pose) => ({
 
 test("保存する形：動画本体・表示用の値は含めない", () => {
   const r = viewToRecord(view([[1]]));
-  assert.deepEqual(Object.keys(r).sort(), ["pose", "spine", "strokes", "video", "world"]);
+  assert.deepEqual(Object.keys(r).sort(), ["hands", "pose", "spine", "strokes", "video", "world"]);
   assert.equal(r.video.size, 1000);
   assert.equal(r.video.codec, "hvc1");
   assert.equal(JSON.stringify(r).includes("blob:"), false);

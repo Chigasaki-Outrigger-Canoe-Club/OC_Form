@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>選手比較 - OC Form 解析</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<!-- 選手比較：保存したデータ（GitHub）の動画＋骨格を、画面いっぱいに並べる（PC 4分割・スマホ 2分割） -->
+<body class="compare-page">
+  <header class="header">
+    <h1><a href="index.html">OC Form 解析</a></h1>
+    <span class="nav active">選手比較</span>
+  </header>
+  <div class="compare-bar">
+    <select id="compareView" class="btn" aria-label="方向">
+      <option value="right">右</option><option value="left">左</option><option value="front">前</option><option value="back">後ろ</option>
+    </select>
+    <label><input type="radio" name="compareSide" value="right" checked> 右漕ぎ</label>
+    <label><input type="radio" name="compareSide" value="left"> 左漕ぎ</label>
+    <button class="btn" id="comparePlay">▶ 再生</button>
+    <select id="compareSpeed" class="btn" aria-label="再生速度">
+      <option value="1">1倍速</option><option value="0.5">1/2倍速</option><option value="0.25" selected>1/4倍速</option>
+    </select>
+    <input type="range" id="comparePhase" min="0" max="100" value="0" class="wide" aria-label="ストロークの位置">
+  </div>
+  <div id="compareGrid" class="compare-grid"></div>
+  <script type="module" src="js/compare-page.js"></script>
+</body>
+</html>

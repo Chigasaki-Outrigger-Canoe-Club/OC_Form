@@ -8,6 +8,9 @@
 
 import { buildSessionFile } from "./sessions.js";
 
+// ブラウザに保存する設定の名前（解析ページと選手比較ページで共通）
+export const SETTINGS_KEY = "oc-form-github";
+
 export const DEFAULT_SETTINGS = {
   owner: "chigasaki-outrigger-canoe-club",
   repo: "OC_Form",

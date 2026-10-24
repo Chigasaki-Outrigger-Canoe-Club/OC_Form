@@ -50,6 +50,10 @@ body {
 }
 
 .header h1 { margin: 0; font-size: 1.2rem; }
+.header h1 a { color: inherit; text-decoration: none; }
+/* ヘッダーのページ切り替え（解析 ⇔ 選手比較） */
+.nav { padding: 4px 10px; border-radius: var(--radius); color: var(--accent); text-decoration: none; font-weight: bold; }
+.nav.active { background: var(--accent); color: #fff; }
 
 .badge {
   font-size: 0.8rem;
@@ -194,15 +198,19 @@ body {
 .erg-title { margin: 0 0 4px; font-weight: bold; font-size: 0.9rem; }
 .erg-readout { margin: 4px 0 0; }
 
-/* 選手を並べて比べる：画面いっぱいに、PCは上下左右の4分割、スマホは上下の2分割 */
+/* 選手比較のページ：画面いっぱい（余白なし）に、PCは上下左右の4分割、スマホは上下の2分割 */
 /* 動画と骨格はどちらも object-fit: contain なので、枠の形が変わっても点はずれない */
-.compare-grid { display: grid; grid-template: 1fr 1fr / 1fr 1fr; gap: 8px; height: 100dvh; }
-.compare-cell { display: flex; flex-direction: column; min-height: 0; }
-.compare-cell .stage { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; margin: 4px 0; }
-.compare-cell .btn { width: 100%; }
-.compare-cell p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compare-page { height: 100dvh; display: flex; flex-direction: column; }
+.compare-page .header { padding: 6px 12px; }
+.compare-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; }
+.compare-grid { flex: 1; min-height: 0; display: grid; grid-template: 1fr 1fr / 1fr 1fr; gap: 2px; }
+.compare-cell { position: relative; display: flex; flex-direction: column; min-height: 0; }
+.compare-cell .stage { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; margin: 0; border-radius: 0; }
+.compare-cell select { position: absolute; top: 4px; left: 4px; z-index: 1; max-width: calc(100% - 8px); opacity: 0.85; }
+.compare-cell p { position: absolute; bottom: 2px; left: 6px; margin: 0; color: #fff; text-shadow: 0 0 3px #000; z-index: 1; }
 @media (max-width: 900px) {
   .compare-grid { grid-template: 1fr 1fr / 1fr; }
   .compare-cell:nth-child(n + 3) { display: none; }
 }
+
 

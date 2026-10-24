@@ -9,6 +9,7 @@
 <body>
   <header class="header">
     <h1>OC Form 解析</h1>
+    <a class="nav" href="compare.html">選手比較</a>
     <span class="badge">MVP 1 ＋ 3D表示（仮実装）</span>
   </header>
 
@@ -59,25 +60,6 @@
       <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
       <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。GitHubのデータはトークンなしで読めます（スマホ可）。<span id="storageUsage"></span></p>
       </div>
-    </section>
-
-    <!-- 選手を並べて比べる（保存したデータの動画＋骨格。ストロークの同じ位置でそろえる） -->
-    <section class="panel">
-      <h2>選手を並べて比べる</h2>
-      <div class="row">
-        <label>方向 <select id="compareView" class="btn">
-          <option value="right">右</option><option value="left">左</option><option value="front">前</option><option value="back">後ろ</option>
-        </select></label>
-        <label><input type="radio" name="compareSide" value="right" checked> 右漕ぎ</label>
-        <label><input type="radio" name="compareSide" value="left"> 左漕ぎ</label>
-        <button class="btn" id="comparePlay">▶ 再生</button>
-        <select id="compareSpeed" class="btn" aria-label="再生速度">
-          <option value="1">1倍速</option><option value="0.5">1/2倍速</option><option value="0.25" selected>1/4倍速</option>
-        </select>
-        <input type="range" id="comparePhase" min="0" max="100" value="0" class="wide" aria-label="ストロークの位置">
-      </div>
-      <div id="compareGrid" class="compare-grid"></div>
-      <p class="muted">GitHubに保存したデータ（動画つき）から選びます。各動画の代表の1ストローク（その漕ぐ側で、長さが中央値に近いもの）を繰り返し、全員が同じ瞬間にストロークの同じ位置（0%＝キャッチ）になるよう再生速度をそろえます。PCは4人、スマホは2人まで並びます。撮る位置・高さ・距離をそろえるほど比べやすくなります。</p>
     </section>
 
     <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->

@@ -14,7 +14,6 @@ import { qualityTable } from "./quality.js";
 import { cleanShafts } from "./shaft.js";
 import { prepareStrokes } from "./tilt.js";
 import { compressVideo } from "./compress.js";
-import { setupCompare } from "./compare.js";
 import { smoothFrames } from "./smooth.js";
 import { plausibleBody } from "./constraints.js";
 import { keyFrames } from "./assist.js";
@@ -562,7 +561,7 @@ async function saveCurrentSession() {
 
 
 // ---- GitHubへの自動保存（解析結果のみ） ----
-const GITHUB_KEY = "oc-form-github";
+const GITHUB_KEY = github.SETTINGS_KEY;
 let ghSettings = { ...github.DEFAULT_SETTINGS };
 try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
 el("rawExport").checked = ghSettings.raw;
@@ -1035,5 +1034,4 @@ sessions.requestPersist(); // ブラウザに「この保存を消さないで�
 renderAthletes();
 loadGitHubAthletes();
 showGitHubList();
-setupCompare(ghSettings);
 selectView("left");

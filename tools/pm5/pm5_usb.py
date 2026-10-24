@@ -93,7 +93,9 @@ class WindowsLink:
     def send(self, data):
         while not self.inbox.empty():  # 前の答えの残りを捨てる
             self.inbox.get()
-        self.reports[data[0]].send(data)  # data[0]＝送り口の番号（csafe_cmd が大きさに合わせて決める）
+        # Windows は送り口の大きさを、いちばん大きい送り口にそろえる（PM5 では 501バイト）。残りを0で埋める
+        size = self.dev.hid_caps.output_report_byte_length
+        self.reports[data[0]].send(data + [0] * (size - len(data)))  # data[0]＝送り口の番号
 
     def receive(self):
         try:

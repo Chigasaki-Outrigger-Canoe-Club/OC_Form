@@ -30,16 +30,6 @@
         <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
       <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内。「解析 → 3Dモデル → 保存」でGitHubにも保存され、スマホなどほかの端末でも使えます）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
-      <details class="sub">
-        <summary>選手データのバックアップ</summary>
-        <div class="row">
-          <button class="btn" id="exportAthletes">選手データを書き出す</button>
-          <label class="btn">
-            選手データを読み込む
-            <input type="file" id="importAthletes" accept=".json,application/json" hidden>
-          </label>
-        </div>
-      </details>
     </section>
 
     <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->

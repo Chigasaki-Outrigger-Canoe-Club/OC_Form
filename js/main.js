@@ -134,8 +134,17 @@ const inputValues = () => Object.fromEntries(athleteInputs.map((id) => [id, el(i
 function saveAthletes(next) {
   store = next;
   const ok = athletes.saveStore(localStorage, store);
-  el("athleteNote").textContent = ok ? "" : "このブラウザでは保存できません（バックアップで書き出してください）";
+  el("athleteNote").textContent = ok ? "" : "このブラウザでは保存できません";
   renderAthletes();
+  uploadAthletesSoon();
+}
+
+// 選手データはGitHubにも自動で保存する（トークンがあるとき。入力が続くあいだは待って、まとめて1回送る）
+let athleteTimer = null;
+function uploadAthletesSoon() {
+  clearTimeout(athleteTimer);
+  if (!ghSettings.token || !store.list.length) return;
+  athleteTimer = setTimeout(() => github.uploadAthletes(ghSettings, athletes.buildBackup(store)).catch(() => {}), 2000);
 }
 
 function renderAthletes() {
@@ -178,22 +187,6 @@ athleteInputs.forEach((id) => el(id).addEventListener("change", () => {
   if (athletes.currentAthlete(store)) saveAthletes(athletes.updateValues(store, inputValues()));
   else renderAthletes();
 }));
-
-el("exportAthletes").addEventListener("click", () => {
-  download("oc-form_athletes.json", JSON.stringify(athletes.buildBackup(store), null, 2), "application/json");
-});
-
-el("importAthletes").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  event.target.value = "";
-  if (!file) return;
-  try {
-    const next = athletes.parseBackup(await file.text());
-    if (confirm(`${next.list.length} 人の選手データで置き換えますか？`)) saveAthletes(next);
-  } catch (err) {
-    alert(`読み込めませんでした：${err.message}`);
-  }
-});
 
 // 3D表示用のパドル寸法（m）。未入力は標準値
 function paddleSize() {
@@ -714,14 +707,29 @@ async function showGitHubList() {
   }
 }
 
-// 別の端末（PC）で保存した選手データを読み、この端末にいない選手を追加する
+// GitHubに保存した選手データを読み、この端末にいない選手を追加する（ブラウザの保存が消えても戻せるように）
+//   選手データのファイルがなければ、保存した解析結果に入っている選手（名前・身長・体重・パドル）から作る
 async function loadGitHubAthletes() {
   try {
     const res = await fetch(github.rawUrl(ghSettings, github.ATHLETES_PATH), { cache: "no-store" });
-    if (!res.ok) return;
-    const merged = athletes.mergeAthletes(store, athletes.parseBackup(await res.text()));
+    const remote = res.ok ? athletes.parseBackup(await res.text()) : await athletesFromSessions();
+    const merged = athletes.mergeAthletes(store, remote);
     if (merged !== store) saveAthletes(merged);
   } catch { /* 読めなくてもこの端末の選手データで続ける */ }
+}
+
+// 選手ごとに最新の解析結果を1つ読み、選手データを取り出す
+async function athletesFromSessions() {
+  const list = await github.listSavedSessions(ghSettings); // 新しい順
+  const latest = list.filter((item, k) => list.findIndex((x) => x.athlete === item.athlete) === k); // 選手ごとに最新の1つ
+  const found = [];
+  for (const item of latest) {
+    const res = await fetch(github.rawUrl(ghSettings, item.path));
+    if (!res.ok) continue;
+    const s = JSON.parse(await res.text());
+    if (s.athleteName) found.push({ id: s.athleteId ?? `a_${s.athleteName}`, name: s.athleteName, values: s.athleteValues ?? {} });
+  }
+  return { current: found[0]?.id ?? null, list: found };
 }
 
 async function importSessionText(text) {
@@ -994,6 +1002,7 @@ function updateDisplay() {
 }
 
 setupErg();
+sessions.requestPersist(); // ブラウザに「この保存を消さないで」と頼む（対応しているブラウザのみ）
 renderAthletes();
 loadGitHubAthletes();
 showGitHubList();

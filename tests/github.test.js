@@ -91,3 +91,9 @@ test("一覧：data/選手名/ファイル.json だけを新しい順に（ト�
   assert.equal(rawUrl(DEFAULT_SETTINGS, "data/まなと/a.json"),
     "https://raw.githubusercontent.com/chigasaki-outrigger-canoe-club/OC_Form/data/data/%E3%81%BE%E3%81%AA%E3%81%A8/a.json");
 });
+
+test("動画の保存先：解析結果と同じ名前に方向をつける", async () => {
+  const { videoPath, toBase64 } = await import("../js/github.js");
+  assert.equal(videoPath({ athleteName: "Manato", date: "2026-10-24", id: "s1" }, "front"), "data/Manato/2026-10-24_s1_front.mp4");
+  assert.equal(toBase64(new Uint8Array([0, 255, 16])), "AP8Q");
+});

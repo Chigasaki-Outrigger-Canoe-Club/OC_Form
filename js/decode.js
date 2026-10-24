@@ -43,7 +43,7 @@ function codecDescription(MP4Box, trak) {
   return undefined;
 }
 
-// onFrame(frame)：コマを表示順に1つずつ渡す（frame は VideoFrame。呼び出し後に閉じる）
+// onFrame(frame)：コマを表示順に1つずつ渡す（frame は VideoFrame。呼び出し後に閉じる。Promise を返せば終わるまで待つ）
 // 戻り値：最後まで読めたら true、この方法が使えなければ false
 export async function decodeFrames(file, onFrame, isStopped) {
   if (!("VideoDecoder" in window) || !file || !/\.(mp4|mov|m4v)$/i.test(file.name)) return false;
@@ -71,7 +71,7 @@ export async function decodeFrames(file, onFrame, isStopped) {
       if (next === mp4.samples.length && !flushing) flushing = decoder.flush().then(() => (done = true), () => {});
       if (ready.length) {
         const frame = ready.shift();
-        onFrame(frame);
+        await onFrame(frame); // onFrame が待つ必要のある処理（動画の書き出しなど）なら終わるまで待つ
         frame.close();
       } else if (done) {
         return true;

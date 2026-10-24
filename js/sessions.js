@@ -11,7 +11,11 @@ const DB_VERSION = 1;
 // 1方向分のデータ → 保存する形（動画本体・表示用の値は除く）
 export function viewToRecord(d) {
   return {
-    video: { name: d.name, fps: d.fps, fpsSource: d.fpsSource, codec: d.codec ?? null, size: d.file?.size ?? null },
+    video: {
+      name: d.name, fps: d.fps, fpsSource: d.fpsSource, codec: d.codec ?? null, size: d.file?.size ?? null,
+      width: d.width ?? null, height: d.height ?? null, // 元の動画の大きさ（骨格の点のピクセル座標の基準）
+      github: d.githubVideo ?? null,                   // GitHubに保存した小さい動画のパス（なければ null）
+    },
     pose: d.pose ?? null,
     world: d.world ?? null,
     spine: d.spine ?? null,

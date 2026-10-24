@@ -12,6 +12,7 @@ import { toBodyFrame, estimatePaddle, shaftToBody } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { correctWorld } from "./hands.js";
 import { cleanShafts } from "./shaft.js";
+import { compressVideo } from "./compress.js";
 import { smoothFrames } from "./smooth.js";
 import { keyFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
@@ -271,8 +272,12 @@ fpsInput.addEventListener("change", () => {
 });
 
 video.addEventListener("loadedmetadata", () => {
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
+  // 骨格の点は元の動画の大きさ（ピクセル）で記録している。GitHubに保存した小さい動画でも同じ位置に描けるよう、
+  // 重ねる画面の大きさは元の動画に合わせる（縦横の比は同じなので、表示ではぴったり重なる）
+  const d = data();
+  if (d && !d.width) Object.assign(d, { width: video.videoWidth, height: video.videoHeight });
+  overlay.width = d?.width ?? video.videoWidth;
+  overlay.height = d?.height ?? video.videoHeight;
   el("videoBox").style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`; // 縦長動画にも合わせる
   updateDisplay();
 });
@@ -542,11 +547,13 @@ let ghSettings = { ...github.DEFAULT_SETTINGS };
 try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
 el("rawExport").checked = ghSettings.raw;
 el("rawExport").addEventListener("change", () => saveGhSettings());
+el("ghVideo").checked = ghSettings.video ?? true; // 初期は「動画も保存する」
+el("ghVideo").addEventListener("change", () => saveGhSettings());
 el("ghToken").value = ghSettings.token;
 el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
 
 function saveGhSettings() {
-  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked };
+  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked, video: el("ghVideo").checked };
   try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
 }
 
@@ -568,6 +575,7 @@ async function uploadToGitHub(session) {
   if (!ghSettings.token) { el("ghNote").textContent = "トークンが未入力のため、GitHubには保存していません（スマホで見るには「保存の設定」でトークンを入れてください）。"; return; }
   el("ghNote").textContent = "GitHubに保存中…";
   try {
+    if (el("ghVideo").checked) await uploadVideos(session);
     const url = await github.uploadSession(ghSettings, session);
     await github.uploadAthletes(ghSettings, athletes.buildBackup(store));
     el("ghNote").innerHTML = "";
@@ -575,6 +583,21 @@ async function uploadToGitHub(session) {
   } catch (err) {
     el("ghNote").textContent = `GitHubに保存できませんでした（ブラウザ内には保存済み）：${err.message}`;
   }
+}
+
+// 動画を小さくしてGitHubに送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
+async function uploadVideos(session) {
+  for (const [view, d] of Object.entries(views)) {
+    if (!d?.file || d.githubVideo || !d.width) continue;
+    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています…`;
+    const blob = await compressVideo(d.file, { width: d.width, height: d.height, duration: (d.pose?.length ?? 0) / d.fps }, d.fps,
+      (r) => (el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています… ${Math.round(r * 100)}%`));
+    if (!blob) { el("ghNote").textContent = `${VIEW_LABELS[view]}の動画は、このブラウザでは小さくできないため送りません`; continue; }
+    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）をGitHubに送っています…`;
+    d.githubVideo = await github.uploadVideo(ghSettings, session, view, blob);
+    session.views[view].video.github = d.githubVideo;
+  }
+  await sessions.saveSession(session, {}); // 送った動画のパスをブラウザ内の保存にも残す
 }
 
 // ================= 過去データ読み出し =================
@@ -601,12 +624,25 @@ function startNewData() {
   dataChanged();
 }
 
+// GitHubに保存した小さい動画を読む（なければ null）。解析し直せるように、MP4 のファイルとして扱う
+async function githubVideo(meta) {
+  if (!meta?.github) return null;
+  try {
+    const res = await fetch(github.rawUrl(ghSettings, meta.github));
+    if (!res.ok) return null;
+    return new File([await res.blob()], meta.github.split("/").pop(), { type: "video/mp4" });
+  } catch {
+    return null;
+  }
+}
+
 async function openSession(id) {
   if (analyzing) return;
   const s = await sessions.getSession(id);
   clearViews();
   for (const [view, r] of Object.entries(s.views)) {
-    const blob = await sessions.getVideo(id, view);
+    // 動画：このブラウザに保存したもの → なければ GitHub に保存した小さい動画
+    const blob = (await sessions.getVideo(id, view)) ?? (await githubVideo(r.video));
     views[view] = {
       file: blob ?? null,
       url: blob ? URL.createObjectURL(blob) : null,
@@ -620,6 +656,9 @@ async function openSession(id) {
       hands: r.hands ?? null,
       shaft: r.shaft ?? null,
       strokes: r.strokes,
+      width: r.video.width ?? null,
+      height: r.video.height ?? null,
+      githubVideo: r.video.github ?? null,
     };
     views[view].body = toBody(views[view]);
     views[view].shaftBody = toShaftBody(views[view]);

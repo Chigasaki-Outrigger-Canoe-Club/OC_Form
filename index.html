@@ -85,8 +85,9 @@
       <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。</p>
       <details class="sub">
         <summary>保存の設定</summary>
+        <label><input type="checkbox" id="ghVideo"> 動画もGitHubに保存する（ブラウザの中で小さくして送ります。1本 約5〜8MB。<strong>公開リポジトリなので、動画も誰でも見られます</strong>）</label><br>
         <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデルとストロークの区切りだけ）</label>
-        <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）と選手データだけで、動画は送りません。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
+        <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）・選手データと、小さくした動画です（下のチェックで動画を送らないこともできます）。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
         <div class="row">
           <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
           <button class="btn" id="ghTest">接続テスト</button>

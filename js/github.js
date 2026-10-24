@@ -1,7 +1,7 @@
 // 解析結果をGitHubのリポジトリに保存する（GitHub REST API の contents を使用）
 // - 保存先：settings.branch（初期値 "data"）。サイト本体の main とは分ける
 //   （保存のたびにサイトが作り直されないように、またコードの更新とぶつからないように）
-// - 保存するもの：セッションの解析結果（JSON）と選手データ（data/athletes.json）。動画は大きすぎるため保存しない
+// - 保存するもの：セッションの解析結果（JSON）、選手データ（data/athletes.json）、小さくした動画（compress.js、1本 約5〜8MB）
 // - 認証：利用者が発行した Fine-grained personal access token（このリポジトリの Contents 読み書きのみ）
 //   トークンはこのブラウザの localStorage にだけ保存する
 // 注意：リポジトリが公開の場合、保存したデータは誰でも見られる
@@ -24,9 +24,9 @@ const safeName = (text) => (text || "unknown").replace(/[\\/:*?"<>|\s]+/g, "_");
 // 保存先のパス：data/選手名/練習日_セッションID.json
 export const sessionPath = (session) => `data/${safeName(session.athleteName)}/${safeName(session.date)}_${session.id}.json`;
 
-// 文字列（日本語を含む）→ Base64（大きなデータでも止まらないよう分けて変換）
-export function toBase64(text) {
-  const bytes = new TextEncoder().encode(text);
+// 文字列（日本語を含む）またはバイト列 → Base64（大きなデータでも止まらないよう分けて変換）
+export function toBase64(input) {
+  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
   let binary = "";
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -96,15 +96,15 @@ export async function listSavedSessions(settings, fetchFn = fetch) {
 export const rawUrl = (settings, path) =>
   `https://raw.githubusercontent.com/${settings.owner}/${settings.repo}/${settings.branch}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
-// ファイルを保存（同じファイルがあれば上書き）。戻り値：GitHub上のURL
-async function putFile(settings, path, text, message, fetchFn) {
+// ファイルを保存（同じファイルがあれば上書き）。content：文字列かバイト列。戻り値：GitHub上のURL
+async function putFile(settings, path, content, message, fetchFn) {
   const api = client(settings, fetchFn);
   await ensureBranch(api, settings);
   const urlPath = `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
   const existing = await api(`${urlPath}?ref=${settings.branch}`);
   const result = await api(urlPath, {
     method: "PUT",
-    body: JSON.stringify({ message, content: toBase64(text), branch: settings.branch, ...(existing?.sha ? { sha: existing.sha } : {}) }),
+    body: JSON.stringify({ message, content: toBase64(content), branch: settings.branch, ...(existing?.sha ? { sha: existing.sha } : {}) }),
   });
   return result.content.html_url;
 }
@@ -113,6 +113,14 @@ async function putFile(settings, path, text, message, fetchFn) {
 export function uploadSession(settings, session, fetchFn) {
   const message = `解析結果を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${session.memo ?? ""}`.trim();
   return putFile(settings, sessionPath(session), JSON.stringify(buildSessionFile(session, { raw: settings.raw })), message, fetchFn);
+}
+
+// 小さくした動画を保存。保存先：data/選手名/練習日_セッションID_方向.mp4。戻り値：パス
+export const videoPath = (session, view) => sessionPath(session).replace(/\.json$/, `_${view}.mp4`);
+export async function uploadVideo(settings, session, view, blob, fetchFn) {
+  const path = videoPath(session, view);
+  await putFile(settings, path, new Uint8Array(await blob.arrayBuffer()), `動画を保存：${session.athleteName ?? ""} ${session.date ?? ""} ${view}`, fetchFn);
+  return path;
 }
 
 // 選手データ（全員の名前・身長・体重・パドル寸法）を保存

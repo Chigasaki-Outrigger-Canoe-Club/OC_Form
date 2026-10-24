@@ -64,3 +64,13 @@ test("人が直した点は、同じ漕ぐ側の別のストロークの同じ�
   assert.ok(moved(49) > 25);  // 次の左漕ぎ（40〜58）の約50%（49＝47%）にも効く（位置が少しずれる分だけ弱く）
   assert.ok(Math.abs(moved(30)) < 1e-6);    // 右漕ぎには効かない
 });
+
+test("4場面で直すと、その間は直した量を補間する", async () => {
+  const { phaseOffset } = await import("../js/hands.js");
+  const fixes = [{ phase: 0, shift: [0, 0] }, { phase: 0.25, shift: [20, 0] }, { phase: 0.5, shift: [40, 0] }, { phase: 0.75, shift: [0, 0] }];
+  assert.deepEqual(phaseOffset(fixes, 0.25), { shift: [20, 0], w: 1 });
+  assert.ok(Math.abs(phaseOffset(fixes, 0.375).shift[0] - 30) < 1e-9);
+  assert.ok(Math.abs(phaseOffset(fixes, 0.875).shift[0] - 0) < 1e-9); // 75%→100%(=0%) の間
+  const one = phaseOffset([{ phase: 0.5, shift: [10, 0] }], 0.9); // 1か所だけ直した → 遠い所は効かない
+  assert.equal(one.w, 0);
+});

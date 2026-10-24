@@ -7,7 +7,7 @@
 // 骨格推定（Pose）は手が小さく写るうえ、手どうし・体と重なると手首を見誤りやすい。
 // そこで次の2つで、画像上（2D）の手の位置を直し、その分だけ3D（world）の点を動かす：
 //   1. 手の専用推定（Hand Landmarker、手1つにつき21点）：手首・人差し指と小指の付け根
-//   2. 人による補助：画面で点をドラッグして直したフレーム。同じ漕ぐ側の全ストロークの、同じ位置（何%）にも効かせる
+//   2. 人による補助：画面で点をドラッグして直したフレーム。同じ漕ぐ側の全ストロークに、直した位置どうしを補間して効かせる
 // 2D→3D の移し方：
 //   MediaPipe の world 座標の x・y は、画像の横・縦とほぼ同じ向き（奥行き z だけが別）。
 //   フレームごとに「画像の1ピクセル＝worldの何m」を、肩・腰の点から最小二乗で求め（s）、
@@ -84,18 +84,43 @@ function manualFixes(pose, strokes) {
   return list;
 }
 
-// 直した点が、フレーム n にどれだけ効くか（0〜1）
-//   同じ漕ぐ側のストロークなら、ストロークの中の位置が近いほど強く（同じ位置＝100%、PHASE_WIDTH 離れると0%）
-//   → 同じ漕ぎを繰り返しているので、1か所直せば全ストロークの同じ位置に効く
-//   ストロークの外なら、フレームが近いほど強く（SPREAD フレーム先＝0%）
-export const PHASE_WIDTH = 0.08;
-function fixWeight(fix, n, at) {
-  if (fix.frame === n) return 1;
-  if (fix.at && at && fix.at.side === at.side) {
-    const d = Math.abs(fix.at.phase - at.phase);
-    return Math.max(0, 1 - Math.min(d, 1 - d) / PHASE_WIDTH);
+// 人が直した点を、ほかのフレームにどう効かせるか
+//   同じ漕ぐ側のストロークでは、直した位置（何%か）どうしの間を直線で補間する（ストロークは繰り返すので、100%の次は0%につなぐ）
+//   → キャッチ・ドライブ・フィニッシュ・リカバリーの4場面を直せば、その間も補間で直る。動きの形は動画の推定のまま
+//   直した位置から遠い（FADE_START 以上離れた）所では少しずつ弱め、FADE_END で0にする
+//   ストロークの外では、フレームが近いほど強く（SPREAD フレーム先＝0%）
+export const FADE_START = 0.15;
+export const FADE_END = 0.3;
+const circular = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 1 - d); };
+
+// 同じ漕ぐ側・同じ点の、直した位置の一覧 list=[{ phase, shift }] から、位置 q の移動量と効き具合
+export function phaseOffset(list, q) {
+  const sorted = [...list].sort((a, b) => a.phase - b.phase);
+  const after = sorted.find((f) => f.phase >= q) ?? sorted[0];
+  const before = [...sorted].reverse().find((f) => f.phase <= q) ?? sorted[sorted.length - 1];
+  const span = ((after.phase - before.phase + 1) % 1) || 1; // before→after の長さ（一周まわるときも）
+  const t = before === after ? 0 : ((q - before.phase + 1) % 1) / span;
+  const shift = [0, 1].map((k) => before.shift[k] + (after.shift[k] - before.shift[k]) * t);
+  const nearest = Math.min(circular(q, before.phase), circular(q, after.phase));
+  const w = Math.min(1, Math.max(0, (FADE_END - nearest) / (FADE_END - FADE_START)));
+  return { shift, w };
+}
+
+// フレーム n の、人の補助による移動量 { 関節番号: { shift, w } }
+function fixShifts(fixes, strokes, n) {
+  const at = strokePhase(n, strokes);
+  const out = {};
+  const joints = [...new Set(fixes.map((f) => f.joint))];
+  for (const joint of joints) {
+    const mine = fixes.filter((f) => f.joint === joint);
+    const exact = mine.find((f) => f.frame === n);
+    if (exact) { out[joint] = { shift: exact.shift, w: 1 }; continue; }
+    const same = at ? mine.filter((f) => f.at?.side === at.side) : [];
+    if (same.length) { out[joint] = phaseOffset(same.map((f) => ({ phase: f.at.phase, shift: f.shift })), at.phase); continue; }
+    const near = mine.map((f) => ({ f, w: 1 - Math.abs(f.frame - n) / (SPREAD + 1) })).filter((x) => x.w > 0).sort((a, b) => b.w - a.w)[0];
+    if (near) out[joint] = { shift: near.f.shift, w: near.w };
   }
-  return Math.max(0, 1 - Math.abs(fix.frame - n) / (SPREAD + 1));
+  return out;
 }
 
 // 手の専用推定による2Dの移動量を全フレーム分作る：[{ 関節番号: [dx, dy] } | null]
@@ -135,18 +160,9 @@ function handShiftSeries(pose, hands) {
 //   人の補助は手以外の点（肩・腰など）にも使う
 function frameShifts(handSeries, fixes, strokes, n) {
   const shifts = { ...(handSeries[n] ?? {}) };
-  const at = strokePhase(n, strokes);
-  const byJoint = {};
-  for (const fix of fixes) {
-    const w = fixWeight(fix, n, at);
-    if (w > 0) (byJoint[fix.joint] ??= []).push({ w, shift: fix.shift });
-  }
-  for (const [joint, list] of Object.entries(byJoint)) {
-    const total = list.reduce((sum, x) => sum + x.w, 0);
-    const avg = [0, 1].map((k) => list.reduce((sum, x) => sum + x.shift[k] * x.w, 0) / total);
-    const w = Math.min(1, Math.max(...list.map((x) => x.w)));
+  for (const [joint, { shift, w }] of Object.entries(fixShifts(fixes, strokes, n))) {
     const own = shifts[joint] ?? [0, 0];
-    shifts[joint] = [own[0] * (1 - w) + avg[0] * w, own[1] * (1 - w) + avg[1] * w];
+    shifts[joint] = [own[0] * (1 - w) + shift[0] * w, own[1] * (1 - w) + shift[1] * w];
   }
   return shifts;
 }

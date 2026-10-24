@@ -10,6 +10,7 @@
 
 import { P } from "./angles.js";
 import { assignHands, strokePhase } from "./hands.js";
+import { releaseFrame } from "./drive.js";
 
 const BINS = 5; // 漕ぐ側ごとの区間の数（左右で 10 フレーム）
 
@@ -63,4 +64,43 @@ export function suggestFrames(pose, hands, strokes, fps, count = 10) {
     picked.push(c);
   }
   return picked.sort((a, b) => a.frame - b.frame);
+}
+
+// ---- 人が骨格を合わせる4場面（漕ぐ側ごと） ----
+// キャッチ＝ストロークの始まり、フィニッシュ＝力が抜けた位置（推定）、
+// ドライブ＝キャッチとフィニッシュの真ん中、リカバリー＝フィニッシュと次のキャッチの真ん中
+export const KEYS = [
+  { key: "catch", label: "キャッチ" },
+  { key: "drive", label: "ドライブ" },
+  { key: "finish", label: "フィニッシュ" },
+  { key: "recovery", label: "リカバリー" },
+];
+
+// 漕ぐ側ごとの代表のストローク：長さが中央値に最も近いもの（最初と最後のストロークはなるべく使わない）
+function representative(strokes, side) {
+  const list = strokes.slice(0, -1).map((s, n) => ({ n, len: strokes[n + 1].frame - s.frame, side: s.side })).filter((x) => x.side === side);
+  if (!list.length) return null;
+  const inner = list.length > 2 ? list.filter((x) => x.n > 0 && x.n < strokes.length - 2) : list;
+  const lens = inner.map((x) => x.len).sort((a, b) => a - b);
+  const median = lens[Math.floor(lens.length / 2)];
+  return inner.reduce((best, x) => (Math.abs(x.len - median) < Math.abs(best.len - median) ? x : best)).n;
+}
+
+// 4場面のフレーム。戻り値：[{ frame, side, key, label, at, weak }]（右漕ぎ→左漕ぎ、各4つ）
+export function keyFrames(pose, hands, strokes, body) {
+  const out = [];
+  for (const side of ["right", "left"]) {
+    const n = representative(strokes, side);
+    if (n == null) continue;
+    const start = strokes[n].frame;
+    const end = strokes[n + 1].frame;
+    const release = releaseFrame(strokes, n, body) ?? Math.round(start + (end - start) * 0.4);
+    const frames = { catch: start, drive: Math.round((start + release) / 2), finish: release, recovery: Math.round((release + end) / 2) };
+    for (const { key, label } of KEYS) {
+      const frame = frames[key];
+      const weak = frameDoubt(pose[frame], hands?.[frame]).filter((d) => d.score > 0.4).map((d) => d.label);
+      out.push({ frame, side, key, label, at: strokePhase(frame, strokes), weak });
+    }
+  }
+  return out;
 }

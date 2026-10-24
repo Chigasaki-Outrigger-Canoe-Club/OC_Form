@@ -60,10 +60,10 @@
 
       <div class="row">
         <input type="text" id="sessionMemo" class="btn wide" placeholder="メモ（例：40spm、右3本で交代）">
-        <button class="btn primary" id="runAll">解析 → 3Dモデル → 保存</button>
+        <button class="btn primary" id="runAll">実行</button>
         <button class="btn" id="stop" disabled>中止</button>
       </div>
-      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから押してください。読み込んだ全方向を解析し、3Dモデルと改善点を作り、保存します（40秒の動画1本で数分かかります）。</p>
+      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。</p>
       <details class="sub">
         <summary>保存の設定</summary>
         <label><input type="checkbox" id="saveVideo"> 動画も保存する（このブラウザ内だけ。1本で約60〜70MB）</label><br>
@@ -149,15 +149,18 @@
       </div>
 
       <!-- 骨格推定の補助：自信のないフレームを人が直す -->
-      <details class="sub" id="assistBox">
-        <summary>骨格推定の補助（約10フレーム）</summary>
-        <p class="muted">推定に自信がないフレームを選びます。「このフレームへ」で移動し、動画の上の点（手首・肩など）をドラッグして実際の位置に直してください。同じ漕ぎを繰り返しているので、直した点は同じ漕ぐ側の全ストロークの同じ位置（何%か）にも効きます（前後8%まで少しずつ）。指を離すと3Dモデルが作り直されます。左右それぞれストロークの5か所を選ぶので、10フレーム直せば1ストローク全体に効きます。手首は、パドルを握っている手の付け根（手首のしわ）に合わせてください。</p>
-        <button class="btn" id="assistMake">補助するフレームを選ぶ（この方向）</button>
+      <div class="sub" id="assistBox">
+        <strong>骨格の調整（人の手で合わせる）</strong>
+        <p class="muted">動画からの推定は精度が高くないため、漕ぐ側ごとに4場面（キャッチ・ドライブ・フィニッシュ・リカバリー）だけ、人が骨格の位置を合わせます。「合わせる」で移動し、動画の上の点をドラッグして実際の位置にしてください（特に両手首＝シャフトの角度、肩）。手首は、パドルを握っている手の付け根（手首のしわ）に合わせます。合わせた量は、同じ漕ぐ側の全ストロークに効き、4場面の間は補間します（動きの形は動画の推定を使います）。調整しない場面があっても進めます。</p>
+        <div class="row">
+          <button class="btn" id="assistMake">この方向の4場面を出す</button>
+          <button class="btn primary" id="assistDone">調整を終えて 3Dモデル → 保存</button>
+        </div>
         <table class="table">
-          <thead><tr><th>No.</th><th>時間・位置</th><th>自信がない点</th><th></th></tr></thead>
+          <thead><tr><th>方向</th><th>場面</th><th>時間</th><th>自信がない点</th><th></th></tr></thead>
           <tbody id="assistList"></tbody>
         </table>
-      </details>
+      </div>
 
       <!-- ストロークの区切りの編集（ストローク欄の「編集する」で表示） -->
       <div id="strokeEditor" class="sub editor" hidden>

@@ -12,7 +12,7 @@ import { toBodyFrame, estimatePaddle } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { correctWorld } from "./hands.js";
 import { smoothFrames } from "./smooth.js";
-import { suggestFrames } from "./assist.js";
+import { keyFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
 import { spinePoints } from "./spine.js";
 import { detectDrive, refineToCatch, releaseFrame } from "./drive.js";
@@ -229,7 +229,6 @@ function selectView(view) {
   showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
     : d.url ? "読み込み中…"
     : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
-  renderAssist();
   renderStrokes();
   updateDisplay();
 }
@@ -401,9 +400,9 @@ function setAnalyzing(on) {
 
 el("stop").addEventListener("click", () => (stopRequested = true));
 
-// ================= まとめて実行：解析 → 3Dモデル → 保存 =================
+// ================= 実行：骨格推定 → 骨格の調整 → 3Dモデル → 保存 =================
 el("runAll").addEventListener("click", async () => {
-  if (analyzing) return;
+  if (analyzing || finishAdjust) return; // 解析中・調整待ちのときは押しても何もしない
   if (!athletes.currentAthlete(store)) return runStatus("先に選手を追加・選択してください（保存先になります）");
   const targets = Object.keys(VIEW_LABELS).filter((v) => views[v]?.url && !views[v].pose);
   const analyzedBefore = Object.keys(views).filter((v) => views[v].pose);
@@ -416,7 +415,7 @@ el("runAll").addEventListener("click", async () => {
     for (const [n, v] of targets.entries()) {
       selectView(v);
       await waitForVideo();
-      if (!(await analyzeCurrent(`1/3 ${VIEW_LABELS[v]}を解析中（${n + 1} / ${targets.length}）`))) { ok = false; break; }
+      if (!(await analyzeCurrent(`1/4 ${VIEW_LABELS[v]}の骨格推定中（${n + 1} / ${targets.length}）`))) { ok = false; break; }
     }
   } catch (err) {
     ok = false;
@@ -429,17 +428,28 @@ el("runAll").addEventListener("click", async () => {
     return;
   }
 
-  // 2. 3Dモデル
-  if (!fused?.right && !fused?.left) {
-    return runStatus("2/3 3Dモデルを作れませんでした（ストロークを検出できていない可能性）。下のストローク表を確認してください。保存はしていません。");
+  // 2. 骨格の調整（人が4場面を合わせる。「調整を終えて…」を押すまで待つ）
+  makeAssistRows();
+  if (assistRows.length) {
+    runStatus("2/4 骨格の調整：下の表の「合わせる」で各場面へ移動し、点をドラッグして実際の位置に合わせてください。終わったら「調整を終えて 3Dモデル → 保存」を押します（調整しなくても進めます）。");
+    el("assistBox").scrollIntoView({ behavior: "smooth", block: "start" });
+    await new Promise((resolve) => (finishAdjust = resolve));
+    finishAdjust = null;
   }
-
-  // 3. 保存
-  runStatus("3/3 保存中…");
-  const saved = await saveCurrentSession();
-  runStatus(saved ? `完了：解析・3Dモデル・保存が終わりました。${el("fusionInfo").textContent}` : "3/3 保存できませんでした。");
-  showDisplay("model");
+  await buildAndSave();
 });
+
+// 3. 3Dモデル → 4. 保存
+async function buildAndSave() {
+  dataChanged();
+  if (!fused?.right && !fused?.left) {
+    return runStatus("3/4 3Dモデルを作れませんでした（ストロークを検出できていない可能性）。下のストローク表を確認してください。保存はしていません。");
+  }
+  runStatus("4/4 保存中…");
+  const saved = await saveCurrentSession();
+  runStatus(saved ? `完了：骨格推定・調整・3Dモデル・保存が終わりました。${el("fusionInfo").textContent}` : "4/4 保存できませんでした。");
+  showDisplay("model");
+}
 
 // ================= 統合3Dモデルとフォームの改善点 =================
 // 解析結果・ストロークが変わったら呼ぶ
@@ -863,25 +873,47 @@ overlay.addEventListener("pointermove", (e) => {
   updateDisplay();
 });
 
-// ================= 骨格推定の補助（自信のないフレームを人が直す） =================
-el("assistMake").addEventListener("click", () => {
-  const d = data();
-  if (!d?.pose) return alert("この方向はまだ解析していません");
-  d.assist = suggestFrames(d.pose, d.hands, d.strokes, d.fps);
+// ================= 骨格の調整（人の手で4場面を合わせる） =================
+// 全方向の4場面（キャッチ・ドライブ・フィニッシュ・リカバリー）×漕ぐ側。[{ view, frame, side, label, weak }]
+let assistRows = [];
+let finishAdjust = null; // 「実行」の途中で調整を待っているとき、進めるための関数
+
+function makeAssistRows() {
+  assistRows = Object.entries(views)
+    .filter(([, d]) => d?.pose && d.strokes.length > 1)
+    .flatMap(([view, d]) => keyFrames(d.pose, d.hands, d.strokes, d.body).map((k) => ({ view, ...k })));
   renderAssist();
+}
+
+el("assistMake").addEventListener("click", () => {
+  makeAssistRows();
+  if (!assistRows.length) alert("骨格推定とストロークの区切りがある方向がありません");
+});
+
+// 調整を終えたら：「実行」の途中ならその続き（3Dモデル→保存）、そうでなければ3Dモデルを作り直して保存
+el("assistDone").addEventListener("click", async () => {
+  if (finishAdjust) return finishAdjust();
+  if (!Object.keys(views).length) return;
+  dataChanged();
+  await buildAndSave();
 });
 
 function renderAssist() {
-  const d = data();
   const body = el("assistList");
   body.innerHTML = "";
-  for (const [n, a] of (d?.assist ?? []).entries()) {
-    const fixed = d.pose[a.frame].some((p) => p.src === "manual");
+  for (const a of assistRows) {
+    const d = views[a.view];
+    const fixed = d?.pose?.[a.frame]?.some((p) => p.src === "manual");
     const tr = document.createElement("tr");
-    const at = a.at ? `${SIDE_LABEL[a.at.side] ?? ""} ${Math.round(a.at.phase * 100)}%` : "";
-    tr.innerHTML = `<td>${n + 1}</td><td>${formatTime(a.frame / d.fps)}<br><span class="muted small">${at}</span></td><td>${a.weak.join("・") || "全体を確認"}</td>`
-      + `<td><button class="btn small">このフレームへ</button> ${fixed ? '<span class="muted">直した</span>' : ""}</td>`;
-    tr.querySelector("button").addEventListener("click", () => { showDisplay("video"); goToFrame(a.frame); });
+    tr.innerHTML = `<td>${VIEW_LABELS[a.view]}</td><td>${SIDE_LABEL[a.side]}・${a.label}</td><td>${formatTime(a.frame / d.fps)}</td>`
+      + `<td>${a.weak.join("・") || '<span class="muted">確認</span>'}</td>`
+      + `<td><button class="btn small">合わせる</button> ${fixed ? '<span class="muted">合わせた</span>' : ""}</td>`;
+    tr.querySelector("button").addEventListener("click", () => {
+      if (a.view !== currentView) selectView(a.view);
+      showDisplay("compare"); // 動画と3Dを並べて、合わせた結果をすぐ見られるように
+      goToFrame(a.frame);
+      if (!views[a.view].url) runStatus(`${VIEW_LABELS[a.view]}の動画がないため、点を動かせません。「動画を選択」で同じ動画（${views[a.view].name}）を選んでください。`);
+    });
     body.appendChild(tr);
   }
 }

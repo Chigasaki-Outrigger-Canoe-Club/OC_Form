@@ -29,3 +29,14 @@ test("補助するフレーム：自信のない順に、近すぎるフレー�
   assert.deepEqual(picked.map((p) => p.frame), [20, 70]); // 21 は 20 に近いので飛ばす
   assert.deepEqual(picked[0].weak, ["左手首"]);
 });
+
+test("4場面：代表のストロークのキャッチ・ドライブ・フィニッシュ・リカバリー", async () => {
+  const { keyFrames } = await import("../js/assist.js");
+  const pose = Array.from({ length: 200 }, () => frame(0.95));
+  const strokes = [0, 40, 80, 120, 160, 199].map((f, i) => ({ frame: f, side: i % 2 ? "left" : "right" }));
+  const keys = keyFrames(pose, [], strokes, null); // body なし → フィニッシュはストロークの40%
+  assert.equal(keys.length, 8);
+  const right = keys.filter((k) => k.side === "right");
+  assert.deepEqual(right.map((k) => k.key), ["catch", "drive", "finish", "recovery"]);
+  assert.deepEqual(right.map((k) => k.frame), [80, 88, 96, 108]); // 中ほどのストローク（80〜120）
+});

@@ -8,10 +8,11 @@ import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle, paddleTrack, shaftToBody } from "./body3d.js";
-import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
+import { viewRepresentative, fuseViews, sideDurations, sourceSummary } from "./fusion.js";
 import { correctWorld, corrected2d } from "./hands.js";
 import { qualityTable } from "./quality.js";
 import { cleanShafts } from "./shaft.js";
+import { prepareStrokes } from "./tilt.js";
 import { compressVideo } from "./compress.js";
 import { setupCompare } from "./compare.js";
 import { smoothFrames } from "./smooth.js";
@@ -479,12 +480,14 @@ async function buildAndSave() {
 // ================= 統合3Dモデルとフォームの改善点 =================
 // 解析結果・ストロークが変わったら呼ぶ
 function dataChanged() {
-  const usable = Object.entries(views).filter(([v, d]) => d?.body && d.strokes.length > 1 && el(`fuse-${v}`).checked);
-  const info = Object.entries(views)
-    .filter(([v, d]) => d.strokes.length > 1 && el(`fuse-${v}`).checked)
-    .map(([name, d]) => ({ name, fps: d.fps, strokes: d.strokes }));
+  // 統合に使う動画。後ろなど手の高さで区切れない動画は、肩の傾きで区切る（tilt.js）
+  const checked = Object.entries(views).filter(([v, d]) => d && el(`fuse-${v}`).checked);
+  const strokes = prepareStrokes(checked.map(([name, d]) => ({ ...d, name })));
+  const prepared = checked.map(([name, d], k) => ({ ...d, name, strokes: strokes[k] })).filter((d) => d.strokes.length > 1);
+  const usable = prepared.filter((d) => d.body);
+  const info = prepared.map((d) => ({ name: d.name, fps: d.fps, strokes: d.strokes }));
   if (usable.length) {
-    fused = fuseViews(Object.fromEntries(usable.map(([v, d]) => [v, viewRepresentative(d)])));
+    fused = fuseViews(Object.fromEntries(usable.map((d) => [d.name, viewRepresentative(d)])));
     fused.duration = sideDurations(info); // 繰り返し再生の速さ（平均ストローク時間）
   } else {
     fused = savedModel; // 全フレームのデータがない過去データは、保存してある平均モデルを使う
@@ -494,7 +497,10 @@ function dataChanged() {
     const f = fused?.[side];
     return `${SIDE_LABEL[side]}：` + (f ? Object.entries(f.strokes).map(([v, n]) => `${VIEW_LABELS[v]}${n}本`).join("・") : "データなし");
   };
+  // 部位ごとの担当カメラ（いちばん効いた方向）と信頼度
+  const roles = (side) => sourceSummary(fused?.[side]).map((s) => `${s.part}＝${VIEW_LABELS[s.main]}（${s.score.toFixed(2)}）`).join("・");
   el("fusionInfo").textContent = fused ? `統合に使ったストローク… ${describe("right")}／${describe("left")}` : "";
+  el("fusionRoles").textContent = fused ? ["right", "left"].filter((s) => fused[s]?.sources).map((s) => `${SIDE_LABEL[s]}：${roles(s)}`).join("／") : "";
   renderFeedback(info);
   updateDisplay();
 }

@@ -4,12 +4,11 @@
 // 代わりに次の手順で合わせる：
 //   1. 各動画のストロークを 0〜100% に正規化し、漕ぐ側（左・右）ごとに平均する（代表ストローク）
 //   2. 大きさをそろえる（胴の長さ＝肩の中点〜腰の中点 を全動画の平均に合わせる）
-//   3. 同じ位相の点を方向ごとに重み付き平均する
-//      重み＝MediaPipeの信頼度 ×「軸ごとの見やすさ」
-//      見やすさ：カメラの奥行き方向の軸は低く（1台のカメラでは奥行きの精度が低いため）、
-//      画面に平行な軸は高くする。 reliability(軸) = 1 − 0.8 ×（カメラ方向の成分）²
-//      さらに「部位ごとの得意・不得意」（jointWeights）を掛ける。向きはカメラの方向から自動で決める
-//   4. 位相に沿って軽くならす（平均しても残る細かいぎざぎざを取る）
+//   3. 同じ位相の点を、関節・軸ごとに「担当カメラ」を優先して合わせる（ROLES。4方向を平均しない）
+//      重み＝役割（担当1・補助0.2・使わない0）× MediaPipe の信頼度。担当がよく見えていれば担当がほぼ決め、
+//      担当の信頼度が低いときだけ補助が効く。関節ごとに、いちばん効いたカメラと信頼度を記録する
+//      後ろの動画は肩の傾きで区切り（tilt.js）、肩の傾きが横の動画と重なるよう位相をずらしてから合わせる
+//   4. 位相に沿って軽くならす（信頼度の低い点ほど、前後の位相に寄せる）
 //   5. 漕ぎとしてありえない形を直す（constraints.js：骨の長さ・胴と頭の傾き）
 //   6. 足をそろえる（legs.js の setFeet：かかと同士は拳1個分、内股にしない）
 // 結果は「同じ漕ぎ方を繰り返している」と仮定した推定値で、特定の1ストロークの再現ではない。
@@ -19,9 +18,9 @@ import { cameraDirection, median, shaftToBody } from "./body3d.js";
 import { setFeet } from "./legs.js";
 import { plausibleBody } from "./constraints.js";
 import { gaussian, fillGaps } from "./smooth.js";
+import { tiltCurve, bestShift, shiftPhases } from "./tilt.js";
 
 export const PHASES = 101; // 0%, 1%, …, 100%
-const DEPTH_PENALTY = 0.8;
 const AXES = ["x", "y", "z"];
 const JOINT_COUNT = 33;
 
@@ -33,15 +32,76 @@ function torso(f) {
 }
 
 // 位相（0〜100%）に沿って、点ごと・軸ごとにガウス重みでならす（σ＝PHASE_SIGMA %）
+// sources があれば信頼度で重み付け：信頼度の低い点は、前後の位相（信頼度の高い点）に寄せる
 const PHASE_SIGMA = 1.5;
-export function smoothPhases(frames) {
+export function smoothPhases(frames, sources = null) {
   const out = frames.map((f) => (f ? f.map((p) => ({ ...p })) : null));
   for (let j = 0; j < JOINT_COUNT; j++) {
+    const weight = sources ? sources.map((s) => Math.max(s?.[j]?.score ?? 0, 0.05)) : [];
     for (const a of AXES) {
-      gaussian(frames.map((f) => (f ? f[j][a] : null)), PHASE_SIGMA).forEach((v, i) => out[i] && (out[i][j][a] = v));
+      gaussian(frames.map((f) => (f ? f[j][a] : null)), PHASE_SIGMA, weight).forEach((v, i) => out[i] && (out[i][j][a] = v));
     }
   }
   return out;
+}
+
+// 1つの関節を、各カメラの役割×信頼度（visibility）で合わせる
+// list：[{ name, f: その位相の33点, k: 大きさの調整, joints: 役割の重み }]
+// 戻り値：{ x, y, z, v, source: { main, share, score } }
+//   score＝軸ごとの「役割×信頼度」の最大値の平均（担当カメラがよく見えていれば1に近い。補助だけなら低い）
+function fuseJoint(list, j) {
+  const point = { v: Math.max(...list.map((s) => s.f[j].v)) };
+  const byView = Object.fromEntries(list.map((s) => [s.name, 0]));
+  let score = 0;
+  for (const a of AXES) {
+    let sum = 0;
+    let weight = 0;
+    let best = 0;
+    for (const s of list) {
+      const role = s.joints[j][a];
+      const w = role * Math.max(s.f[j].v, 0.01);
+      sum += s.f[j][a] * s.k * w; // 大きさの調整は腰の中心（x・z＝0付近）と床（y＝0）を基準に掛ける
+      weight += w;
+      byView[s.name] += w;
+      best = Math.max(best, role * s.f[j].v);
+    }
+    point[a] = sum / weight;
+    score += Math.min(best, 1) / AXES.length;
+  }
+  const total = Object.values(byView).reduce((x, y) => x + y, 0);
+  const [main, w] = Object.entries(byView).sort((x, y) => y[1] - x[1])[0];
+  return { ...point, source: { main, share: w / total, score } };
+}
+
+// 肩の傾きで区切った動画（後ろなど）は、位相の0%が横の動画と違う。
+// 漕ぐ側ごとに、肩の傾きの曲線が横（ほかの動画）と最もよく重なるようにずらす
+//   基準は前の動画（肩の高さの差がよく見える）。前がなければ、ほかの手の高さで区切った動画
+function alignTiltViews(entries) {
+  const others = entries.filter(([, r]) => !r.alignByTilt);
+  const refs = others.some(([name]) => name === "front") ? others.filter(([name]) => name === "front") : others;
+  if (!refs.length) return entries;
+  return entries.map(([name, r]) => {
+    if (!r.alignByTilt) return [name, r];
+    const out = { ...r, shaft: { ...r.shaft }, shift: {} };
+    for (const side of ["right", "left"]) {
+      const ref = averageCurve(refs.map(([, x]) => x[side]).filter(Boolean).map(tiltCurve));
+      if (!r[side] || !ref) continue;
+      const s = bestShift(tiltCurve(r[side]), ref);
+      out[side] = shiftPhases(r[side], s);
+      out.shaft[side] = shiftPhases(r.shaft?.[side], s);
+      out.shift[side] = s;
+    }
+    return [name, out];
+  });
+}
+
+// 曲線の位相ごとの平均（欠けは除く）。曲線がなければ null
+function averageCurve(curves) {
+  if (!curves.length) return null;
+  return curves[0].map((_, i) => {
+    const v = curves.map((c) => c[i]).filter((x) => x != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  });
 }
 
 // 2フレームの間を直線で補間
@@ -101,30 +161,39 @@ export function averageStrokes(strokes) {
   });
 }
 
-// ---- 部位ごとの得意・不得意（方向ごと） ----
+// ---- 関節ごとの担当カメラ（4方向を平均しない。担当を優先し、ほかは補助） ----
 // 部位：顔、肩、肘、手（手首・指）、腰、脚（膝から下）。MediaPipe の番号で、奇数＝左半身・偶数＝右半身
 const PART_OF = (j) => (j <= 10 ? "head" : j <= 12 ? "shoulder" : j <= 14 ? "elbow" : j <= 22 ? "hand" : j <= 24 ? "hip" : "leg");
 const isLeft = (j) => (j <= 10 ? [1, 2, 3, 7, 9].includes(j) : j % 2 === 1);
-// 横（右・左）：きれいに取れるので、関節の位置は横の動画を中心に使う（カメラ側の半身を重く、反対側はやや軽く）
-// 前・後ろ：横の動画があるときは関節には使わず、シャフトの角度（shaft.js）だけに使う（fuseViews の SIDE_VIEWS）
-// 横の動画がないときだけ、前は手首、後ろは肘と肩の高さ（上下の位置）を使う
-// 値は部位ごとの重み。{ x, y, z } のときは軸ごと（X＝左右、Y＝上下、Z＝前後）。書いていない部位・軸は使わない（0）
-export const PART_WEIGHTS = {
-  near: { head: 1, shoulder: 1, elbow: 1, hand: 1, hip: 1, leg: 1 },
-  far: { head: 1, shoulder: 0.6, elbow: 0.5, hand: 0.5, hip: 0.7, leg: 0.6 },
-  front: { hand: 2 },
-  back: { shoulder: { y: 2 }, elbow: { y: 2 } },
+// 役割：[X＝左右, Y＝上下, Z＝前後] ごとに、1＝担当、AUX＝補助、0＝使わない
+//   手首・肘・脚：横が担当、前・後ろは補助（担当の信頼度が低いときに効く）
+//   肩：前・後ろが担当（左右の位置・高さの差＝体幹の左右の傾き）、横は補助
+//   骨盤：後ろが担当（高さの差）、横は補助
+//   体幹の前傾（肩・腰の前後＝Z）：横だけ。前・後ろの Z はカメラの奥行きで大きくずれるため、どの部位でも使わない
+const AUX = 0.2;
+export const ROLES = {
+  side: { head: [1, 1, 1], shoulder: [AUX, AUX, 1], elbow: [1, 1, 1], hand: [1, 1, 1], hip: [AUX, AUX, 1], leg: [1, 1, 1] },
+  front: { head: [AUX, AUX, 0], shoulder: [1, 1, 0], elbow: [AUX, AUX, 0], hand: [AUX, AUX, 0], hip: [0, 0, 0], leg: [0, 0, 0] },
+  back: { head: [AUX, AUX, 0], shoulder: [1, 1, 0], elbow: [AUX, AUX, 0], hand: [AUX, AUX, 0], hip: [1, 1, 0], leg: [0, 0, 0] },
 };
-const UNUSED = 0.001; // 使わない部位もごくわずかに残す（その部位を撮った動画がほかにないときのため）
+// 横の動画で、カメラと反対側の半身（体に隠れやすい）に掛ける割合
+export const FAR = { head: 1, shoulder: 0.6, elbow: 0.5, hand: 0.5, hip: 0.7, leg: 0.6 };
+const UNUSED = 0.001; // 使わない軸もごくわずかに残す（その軸を撮った動画がほかにないときのため）
 
-// カメラの方向（選手から見た向き。X左・Z前）→ 33点それぞれの、軸ごとの重み [{ x, y, z }]
-export function jointWeights(cam) {
-  const kind = Math.abs(cam.z) >= Math.abs(cam.x) ? (cam.z > 0 ? "front" : "back") : null;
-  const nearLeft = cam.x > 0; // カメラが選手の左側
+// 方向の種類：名前（left・right・front・back）から。名前がなければカメラの方向から
+export function viewKind(name, cam) {
+  if (name === "left" || name === "right") return "side";
+  if (name === "front" || name === "back") return name;
+  return Math.abs(cam.z) >= Math.abs(cam.x) ? (cam.z > 0 ? "front" : "back") : "side";
+}
+
+// 33点それぞれの、軸ごとの役割の重み [{ x, y, z }]。nearLeft＝カメラが選手の左側（横の動画のとき）
+export function jointWeights(kind, nearLeft) {
   return Array.from({ length: JOINT_COUNT }, (_, j) => {
-    const w = PART_WEIGHTS[kind ?? (isLeft(j) === nearLeft ? "near" : "far")][PART_OF(j)] ?? 0;
-    const axis = (a) => Math.max(typeof w === "number" ? w : (w[a] ?? 0), UNUSED);
-    return { x: axis("x"), y: axis("y"), z: axis("z") };
+    const part = PART_OF(j);
+    const far = kind === "side" && isLeft(j) !== nearLeft ? FAR[part] : 1;
+    const [x, y, z] = ROLES[kind][part].map((r) => Math.max(r * far, UNUSED));
+    return { x, y, z };
   });
 }
 
@@ -154,8 +223,8 @@ export function averageShaft(list) {
   });
 }
 
-// 1方向分の代表ストローク { right, left, spine, counts, reliability, sideWeight, torso }
-// view：{ body, world, strokes, spine }（spine＝フレームごとの背中の膨らみ。なければ省略可）
+// 1方向分の代表ストローク { right, left, spine, counts, kind, joints, sideWeight, torso }
+// view：{ name, body, world, strokes, spine }（name＝left・right・front・back、spine＝フレームごとの背中の膨らみ。なければ省略可）
 export function viewRepresentative(view) {
   const groups = { right: [], left: [] };
   const spines = { right: [], left: [] };
@@ -170,15 +239,17 @@ export function viewRepresentative(view) {
   });
 
   const cam = cameraDirection(view.world);
-  const reliability = Object.fromEntries(AXES.map((a) => [a, 1 - DEPTH_PENALTY * cam[a] ** 2]));
+  const kind = viewKind(view.name, cam);
+  const nearLeft = view.name ? view.name === "left" : cam.x > 0;
   return {
     right: groups.right.length ? averageStrokes(groups.right) : null,
     left: groups.left.length ? averageStrokes(groups.left) : null,
     spine: { right: spines.right.length ? averageSeries(spines.right) : null, left: spines.left.length ? averageSeries(spines.left) : null },
     counts: { right: groups.right.length, left: groups.left.length },
     shaft: { right: shafts.right.length ? averageShaft(shafts.right) : null, left: shafts.left.length ? averageShaft(shafts.left) : null },
-    reliability,
-    joints: jointWeights(cam),
+    kind,
+    joints: jointWeights(kind, nearLeft),
+    alignByTilt: view.strokes.some((st) => st.src === "tilt"), // 肩の傾きで区切ったストローク（位相を横の動画に合わせる）
     // 背中の輪郭は横から撮ったときだけ意味がある。横向きの度合い＝カメラ方向の左右成分の2乗
     sideWeight: cam.x ** 2,
     camera: cam,
@@ -186,41 +257,26 @@ export function viewRepresentative(view) {
   };
 }
 
-// 関節（3Dモデル）を作るのに使う方向。前・後ろは奥行きの推定が大きくずれ、実際と違う動きになるため
-const SIDE_VIEWS = ["left", "right"];
-
 // 方向ごとの代表ストロークを1つにまとめる
 // reps：{ left: viewRepresentative(...), back: ... }
 // 戻り値：{ right: { frames, views, strokes }, left: {...} }（その側のデータがなければ null）
 export function fuseViews(reps) {
-  const entries = Object.entries(reps);
+  const entries = alignTiltViews(Object.entries(reps));
   const torsos = entries.map(([, r]) => r.torso).filter((t) => t > 0);
   const targetTorso = torsos.reduce((a, b) => a + b, 0) / (torsos.length || 1);
 
   const fuseSide = (side) => {
     const used = entries.filter(([, r]) => r[side]);
     if (!used.length) return null;
-    // 関節は横の動画だけで作る（横がその側を撮っていないときは、ある動画すべてを使う）
-    const sides = used.filter(([name]) => SIDE_VIEWS.includes(name));
-    const jointViews = sides.length ? sides : used;
+    // 位相ごと・関節ごと・軸ごとに、担当カメラを優先して合わせる。使ったカメラと信頼度も残す
+    const sources = [];
     const frames = Array.from({ length: PHASES }, (_, i) => {
-      const sources = jointViews.map(([, r]) => ({ f: r[side][i], k: targetTorso / r.torso, rel: r.reliability, joints: r.joints })).filter((s) => s.f);
-      if (!sources.length) return null;
-      return Array.from({ length: JOINT_COUNT }, (_, j) => {
-        const point = { v: Math.max(...sources.map((s) => s.f[j].v)) };
-        for (const a of AXES) {
-          let sum = 0;
-          let weight = 0;
-          for (const s of sources) {
-            const w = Math.max(s.f[j].v, 0.01) * s.rel[a] * (s.joints?.[j]?.[a] ?? 1);
-            // 大きさの調整は腰の中心（x・z＝0付近）と床（y＝0）を基準に掛ける
-            sum += s.f[j][a] * s.k * w;
-            weight += w;
-          }
-          point[a] = sum / weight;
-        }
-        return point;
-      });
+      const list = used.map(([name, r]) => ({ name, f: r[side][i], k: targetTorso / r.torso, joints: r.joints })).filter((s) => s.f);
+      sources.push(null);
+      if (!list.length) return null;
+      const out = Array.from({ length: JOINT_COUNT }, (_, j) => fuseJoint(list, j));
+      sources[i] = out.map((p) => p.source);
+      return out.map(({ source, ...p }) => p);
     });
     // 背中の膨らみ：横から撮った動画を重く使って平均（横からの動画がなければ null）
     const spine = Array.from({ length: PHASES }, (_, i) => {
@@ -238,11 +294,11 @@ export function fuseViews(reps) {
       return { x: v[0] / len, y: v[1] / len, z: v[2] / len };
     }) : null;
     return {
-      frames: setFeet(plausibleBody(smoothPhases(frames))),
+      frames: setFeet(plausibleBody(smoothPhases(frames, sources))),
+      sources, // [位相][関節] = { main: いちばん効いたカメラ, share: その割合, score: 信頼度 0〜1 }
       shaft,
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
-      jointViews: jointViews.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),
     };
   };
@@ -274,4 +330,18 @@ export function sideDurations(views) {
   }
   const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
   return { right: avg(secs.right), left: avg(secs.left) };
+}
+
+// 部位ごとに、いちばん効いたカメラと信頼度の平均（画面に出す要約）
+// f：fuseViews の右・左の結果 → [{ part, main, score }]（記録がなければ空）
+const SUMMARY = { 肩: [11, 12], 肘: [13, 14], 手首: [15, 16], 腰: [23, 24], 膝: [25, 26] };
+export function sourceSummary(f) {
+  if (!f?.sources) return [];
+  return Object.entries(SUMMARY).map(([part, joints]) => {
+    const list = f.sources.filter(Boolean).flatMap((s) => joints.map((j) => s[j]));
+    const count = {};
+    list.forEach((s) => (count[s.main] = (count[s.main] ?? 0) + 1));
+    const main = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
+    return { part, main, score: list.reduce((t, s) => t + s.score, 0) / list.length };
+  });
 }

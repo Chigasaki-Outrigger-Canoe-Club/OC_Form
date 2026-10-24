@@ -51,28 +51,13 @@ test("位相ごとの平均（欠けた位相は除いて平均）", () => {
   assert.deepEqual(avg[3][0], { x: 0, y: 0, z: 0, v: 1 });
 });
 
-test("見やすさの重み：横から＝左右方向(X)が低い、後ろから＝前後方向(Z)が低い", () => {
-  const side = viewRepresentative(makeView(Math.PI / 2, 0));
-  near(side.reliability.x, 0.2); near(side.reliability.z, 1); near(side.reliability.y, 1);
-  const back = viewRepresentative(makeView(Math.PI, 0));
-  near(back.reliability.z, 0.2); near(back.reliability.x, 1);
-  assert.equal(side.counts.right, 2);
-  assert.equal(side.left, null);
-});
-
-test("統合：関節は横の動画を使い、後ろの動画の誤差は入りにくい", () => {
-  const left = viewRepresentative(makeView(Math.PI / 2, 0.25));
-  const back = viewRepresentative(makeView(Math.PI, 0.25));
-  const fused = fuseViews({ left, back });
-  const errLeft = maxError(left.right);
-  const errBack = maxError(back.right);
-  const errFused = maxError(fused.right.frames);
-  assert.ok(errFused < 1.2 * Math.max(errLeft, errBack), `統合 ${errFused} / 左 ${errLeft} / 後ろ ${errBack}`); // 骨の長さの補正で少し動く分を見込む
-  assert.deepEqual(fused.right.views, ["left", "back"]);
-  assert.deepEqual(fused.right.jointViews, ["left"]); // 横があれば、関節に後ろは使わない
-  assert.deepEqual(fused.right.frames, fuseViews({ left }).right.frames);
-  assert.deepEqual(fused.right.strokes, { left: 2, back: 2 });
-  assert.equal(fused.left, null);
+test("方向の種類：名前から決める（名前がなければカメラの方向から）", async () => {
+  const { viewKind } = await import("../js/fusion.js");
+  assert.equal(viewKind("left", { x: 0, z: 1 }), "side");
+  assert.equal(viewKind("back", { x: 1, z: 0 }), "back");
+  assert.equal(viewKind("a", { x: 1, z: 0 }), "side");
+  assert.equal(viewKind("a", { x: 0, z: -1 }), "back");
+  assert.equal(viewRepresentative({ ...makeView(Math.PI / 2, 0), name: "front" }).kind, "front");
 });
 
 test("統合：動画ごとの大きさの違いをそろえる", () => {
@@ -116,15 +101,18 @@ test("漕ぐ側ごとの平均ストローク時間", async () => {
   assert.deepEqual(sideDurations([]), { right: null, left: null });
 });
 
-test("部位ごとの重み：関節は横、前は手首だけ、後ろは肘と肩の高さだけ", async () => {
-  const { jointWeights, PART_WEIGHTS } = await import("../js/fusion.js");
-  const right = jointWeights({ x: -1, y: 0, z: 0 }); // カメラが選手の右側
-  assert.equal(right[16].y, PART_WEIGHTS.near.hand);   // 右手首
-  assert.equal(right[15].y, PART_WEIGHTS.far.hand);    // 左手首（反対側）
-  const front = jointWeights({ x: 0, y: 0, z: 1 });
-  assert.equal(front[15].x, PART_WEIGHTS.front.hand);
-  assert.ok(front[11].y < 0.01 && front[27].x < 0.01); // 肩・脚は使わない
-  const back = jointWeights({ x: 0, y: 0, z: -1 });
-  assert.equal(back[11].y, 2);                          // 肩の高さ
-  assert.ok(back[11].x < 0.01 && back[15].y < 0.01);   // 肩の左右・手首は使わない
+test("担当カメラ：手首・肘は横、肩は前・後ろ、骨盤は後ろ、前後の奥行き（Z）は使わない", async () => {
+  const { jointWeights } = await import("../js/fusion.js");
+  const right = jointWeights("side", false); // 右から撮った横の動画
+  assert.equal(right[16].x, 1);              // 右手首：担当
+  assert.equal(right[15].x, 0.5);            // 左手首：反対側なので軽く
+  assert.ok(right[12].x < 0.3 && right[12].z === 1); // 右肩：左右・上下は補助、前後（前傾）は担当
+  const front = jointWeights("front", false);
+  assert.equal(front[11].x, 1);              // 肩の左右：担当
+  assert.ok(front[15].x < 0.3);              // 手首：補助
+  assert.ok(front[11].z < 0.01 && front[23].y < 0.01 && front[27].y < 0.01); // 奥行き・骨盤・脚は使わない
+  const back = jointWeights("back", false);
+  assert.equal(back[23].y, 1);               // 骨盤の高さ：担当
+  assert.equal(back[11].y, 1);               // 肩の高さ：担当
+  assert.ok(back[23].z < 0.01);              // 奥行きは使わない
 });

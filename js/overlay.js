@@ -17,12 +17,13 @@ export const BONES = [
 export const JOINTS = Object.values(P);
 
 const LEFT = new Set([P.lEar, P.lShoulder, P.lElbow, P.lWrist, P.lHip, P.lKnee, P.lAnkle]);
-export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b", hand: "#ffffff" };
+export const COLOR = { left: "#ff8c1a", right: "#1ab2ff", manual: "#ff3b6b", hand: "#ffffff", shaft: "#ff2bd6" };
 
 export const colorOf = (i) => (LEFT.has(i) ? COLOR.left : COLOR.right);
 
 // hands：手の専用推定（そのフレーム）。白い輪で、手首・小指と人差し指の付け根を描く
-export function drawSkeleton(canvas, lm, hands = null) {
+// shaft：画像から見つけたシャフト（そのフレーム）。ピンクの点線で描く
+export function drawSkeleton(canvas, lm, hands = null, shaft = null) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!lm) return;
@@ -47,6 +48,16 @@ export function drawSkeleton(canvas, lm, hands = null) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  if (shaft) {
+    const len = canvas.height * 0.6;
+    ctx.strokeStyle = COLOR.shaft;
+    ctx.setLineDash([size * 4, size * 3]);
+    ctx.beginPath();
+    ctx.moveTo(shaft.point[0] - shaft.dir[0] * len, shaft.point[1] - shaft.dir[1] * len);
+    ctx.lineTo(shaft.point[0] + shaft.dir[0] * len, shaft.point[1] + shaft.dir[1] * len);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.strokeStyle = COLOR.hand;
   for (const h of hands ?? []) {
     for (const [x, y] of h.p) {

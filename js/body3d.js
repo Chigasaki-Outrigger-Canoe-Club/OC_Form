@@ -7,6 +7,7 @@
 // 注意：1台のカメラからの推定値。奥行き（カメラ方向）の精度は低い。
 
 import { P } from "./angles.js";
+import { cleanShafts } from "./shaft.js";
 
 const HEEL_L = 29, HEEL_R = 30, TOE_L = 31, TOE_R = 32;
 
@@ -77,7 +78,9 @@ export function gripPoint(body, hand) {
 // side：そのストロークの漕ぐ側（"left"/"right"）。漕ぐ側の手＝下の手に固定し、ストロークの途中で左右が入れ替わらないようにする
 //       わからないとき（null）だけ、高いほうの手を上の手とみなす
 // 戻り値：{ grip, lowerGrip, bladeStart, tip, widthDir, bladeWidth, side } または null（手が見えない・両手が近すぎる）
-export function estimatePaddle(body, size, side = null) {
+// shaft：画像から見つけたシャフトの向き（選手基準、前・後ろの動画から。なければ null）
+//   あれば、カメラの面（前・後ろなら左右と上下）の向きはシャフトに合わせ、前後の成分は両手から決めたままにする
+export function estimatePaddle(body, size, side = null, shaft = null) {
   if (!body) return null;
   if (body[P.lWrist].v < 0.5 || body[P.rWrist].v < 0.5) return null;
   const l = gripPoint(body, "left");
@@ -87,7 +90,7 @@ export function estimatePaddle(body, size, side = null) {
   const top = bottom === l ? r : l;
   if (length(sub(bottom, top)) < 0.05) return null;
 
-  const dir = normalize(sub(bottom, top));
+  const dir = alignToShaft(normalize(sub(bottom, top)), shaft);
   // ブレード面の幅方向：シャフトと前後方向（Z）の両方に直角＝ブレード面は前を向く
   let widthDir = cross(dir, { x: 0, y: 0, z: 1 });
   if (length(widthDir) < 0.1) widthDir = { x: 1, y: 0, z: 0 };
@@ -102,6 +105,16 @@ export function estimatePaddle(body, size, side = null) {
     side: bottom === l ? "left" : "right",
     src: "est",
   };
+}
+
+// 両手から決めた向き d の、左右・上下の成分の向きを、シャフトの向きに合わせる（長さと前後の成分はそのまま）
+export function alignToShaft(d, shaft) {
+  if (!shaft) return d;
+  const m = Math.hypot(d.x, d.y);
+  const h = Math.hypot(shaft.x, shaft.y);
+  if (h < 0.3) return d; // シャフトがカメラの奥行き方向を向いていて、画像では向きがわからない
+  const sign = d.x * shaft.x + d.y * shaft.y < 0 ? -1 : 1; // ブレード側（下向き）にそろえる
+  return normalize({ x: (sign * shaft.x * m) / h, y: (sign * shaft.y * m) / h, z: d.z });
 }
 
 // ブレードの輪郭：首（シャフトとの境目）が細く、先端寄りで最も広く、先は丸くとがる涙形
@@ -137,6 +150,15 @@ export function project(p, cam, width, height, focal) {
   const x = v.x * cam.right.x + v.y * cam.right.y + v.z * cam.right.z;
   const y = v.x * cam.up.x + v.y * cam.up.y + v.z * cam.up.z;
   return { x: width / 2 + (focal * x) / depth, y: height / 2 - (focal * y) / depth, depth };
+}
+
+// 画像から見つけたシャフトの向き（フレームごと）→ 選手基準の向き（長さ1）と確かさ { x, y, z, s } の配列
+// 急に向きが変わった見つけ違いは外す（cleanShafts）
+// 画像の横・縦は MediaPipe の world の x・y と同じ向きなので、toBodyFrame と同じ反転・回転をかける
+export function shaftToBody(worldFrames, shafts) {
+  if (!shafts || !worldFrames) return null;
+  const angle = bodyAngle(worldFrames.map((f) => (f ? f.map(flip) : null)));
+  return cleanShafts(shafts).map((sh) => sh && { ...normalize(rotateY({ x: sh.dir[0], y: -sh.dir[1], z: 0, v: 1 }, angle)), s: sh.s });
 }
 
 // 選手から見たカメラの方向（選手基準の座標、長さ1）

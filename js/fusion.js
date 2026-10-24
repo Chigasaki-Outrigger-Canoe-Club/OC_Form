@@ -14,9 +14,9 @@
 // 結果は「同じ漕ぎ方を繰り返している」と仮定した推定値で、特定の1ストロークの再現ではない。
 
 import { P } from "./angles.js";
-import { cameraDirection, median } from "./body3d.js";
+import { cameraDirection, median, shaftToBody } from "./body3d.js";
 import { setFeet } from "./legs.js";
-import { gaussian } from "./smooth.js";
+import { gaussian, fillGaps } from "./smooth.js";
 
 export const PHASES = 101; // 0%, 1%, …, 100%
 const DEPTH_PENALTY = 0.8;
@@ -121,16 +121,45 @@ export function jointWeights(cam) {
   });
 }
 
+// ---- 画像から見つけたシャフトの向き（前・後ろの動画） ----
+// 1ストロークのシャフトの向きを PHASES 点に（その位相に最も近いフレームの値。なければ null）
+function resampleShaft(dirs, start, end) {
+  return Array.from({ length: PHASES }, (_, i) => dirs[Math.round(start + ((last(start, end) - start) * i) / (PHASES - 1))] ?? null);
+}
+
+// 位相ごとに向きを平均する（確かさで重み付け）。list：[[{x,y,z,s}|null × PHASES], …]
+// 戻り値：[{ x, y, z, s } | null]（s＝重みの合計。見つからない位相は前後から補間して、軽くならす）
+export function averageShaft(list) {
+  const sum = Array.from({ length: PHASES }, (_, i) => {
+    const found = list.map((s) => s[i]).filter(Boolean);
+    if (!found.length) return null;
+    const v = ["x", "y", "z"].map((a) => found.reduce((t, d) => t + d[a] * d.s, 0));
+    return { v, s: found.reduce((t, d) => t + d.s, 0) };
+  });
+  if (!sum.some(Boolean)) return null;
+  const axis = (k) => gaussian(fillGaps(sum.map((x) => (x ? x.v[k] / x.s : null)), 15, sum.map(() => null)), PHASE_SIGMA);
+  const [xs, ys, zs] = [0, 1, 2].map(axis);
+  const ss = fillGaps(sum.map((x) => x?.s ?? null), 15, sum.map(() => null));
+  return xs.map((x, i) => {
+    if (x == null) return null;
+    const len = Math.hypot(x, ys[i], zs[i]) || 1;
+    return { x: x / len, y: ys[i] / len, z: zs[i] / len, s: ss[i] };
+  });
+}
+
 // 1方向分の代表ストローク { right, left, spine, counts, reliability, sideWeight, torso }
 // view：{ body, world, strokes, spine }（spine＝フレームごとの背中の膨らみ。なければ省略可）
 export function viewRepresentative(view) {
   const groups = { right: [], left: [] };
   const spines = { right: [], left: [] };
+  const shafts = { right: [], left: [] };
+  const shaftDirs = shaftToBody(view.world, view.shaft);
   view.strokes.forEach((s, n) => {
     const next = view.strokes[n + 1];
     if (!next || !groups[s.side]) return;
     groups[s.side].push(resampleStroke(view.body, s.frame, next.frame));
     if (view.spine) spines[s.side].push(resampleSeries(view.spine, s.frame, next.frame));
+    if (shaftDirs) shafts[s.side].push(resampleShaft(shaftDirs, s.frame, next.frame));
   });
 
   const cam = cameraDirection(view.world);
@@ -140,6 +169,7 @@ export function viewRepresentative(view) {
     left: groups.left.length ? averageStrokes(groups.left) : null,
     spine: { right: spines.right.length ? averageSeries(spines.right) : null, left: spines.left.length ? averageSeries(spines.left) : null },
     counts: { right: groups.right.length, left: groups.left.length },
+    shaft: { right: shafts.right.length ? averageShaft(shafts.right) : null, left: shafts.left.length ? averageShaft(shafts.left) : null },
     reliability,
     joints: jointWeights(cam),
     // 背中の輪郭は横から撮ったときだけ意味がある。横向きの度合い＝カメラ方向の左右成分の2乗
@@ -185,8 +215,18 @@ export function fuseViews(reps) {
       const total = src.reduce((sum, x) => sum + x.w, 0);
       return total ? [0, 1, 2].map((k) => src.reduce((sum, x) => sum + x.v[k] * x.w, 0) / total) : null;
     });
+    // シャフトの向き：前・後ろの動画で見つけたものを、確かさで重み付けして平均（なければ null）
+    const shaftList = used.map(([, r]) => r.shaft?.[side]).filter(Boolean);
+    const shaft = shaftList.length ? Array.from({ length: PHASES }, (_, i) => {
+      const found = shaftList.map((l) => l[i]).filter(Boolean);
+      if (!found.length) return null;
+      const v = ["x", "y", "z"].map((a) => found.reduce((t, d) => t + d[a] * d.s, 0));
+      const len = Math.hypot(...v) || 1;
+      return { x: v[0] / len, y: v[1] / len, z: v[2] / len };
+    }) : null;
     return {
       frames: setFeet(smoothPhases(frames)),
+      shaft,
       spine: spine.some(Boolean) ? spine : null,
       views: used.map(([name]) => name),
       strokes: Object.fromEntries(used.map(([name, r]) => [name, r.counts[side]])),

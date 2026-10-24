@@ -7,6 +7,9 @@ import { frameCount, frameToTime } from "./frame-math.js";
 import { backProfile } from "./spine.js";
 import { decodeFrames } from "./decode.js";
 import { HAND_POINTS } from "./hands.js";
+import { detectShaft, learnWood, WOOD } from "./shaft.js";
+
+const SHAFT_WIDTH = 360; // シャフトを探すときに縮小する画像の幅（px）
 
 const VERSION = "0.10.14";
 const LIB = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}`;
@@ -56,37 +59,50 @@ function seekTo(video, time) {
 
 const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
 
-// 動画の全フレームを解析。戻り値：{ frames, world, spine, hands, method }（人が見つからないフレームは null）
+// 動画の全フレームを解析。戻り値：{ frames, world, spine, hands, shaft, method }（人が見つからないフレームは null）
 //   frames：画像上のピクセル座標、world：MediaPipe の3D推定座標（腰の中心が原点、およそメートル）
 //   spine：シルエットから測った背中の膨らみ（spine.js の backProfile。測れないフレームは null）
+//   shaft：画像から見つけた木のシャフト（options.shaft のときだけ。前・後ろの動画用）。フレームごとに { dir, point, s } または null
 //   hands：手の専用推定。フレームごとに [{ s: 信頼度, p: [[x,y] 手首, 小指の付け根, 人差し指の付け根] }]（hands.js で使う）
 //   method："順番に読む"（速い）または "頭出し"（順番に読めない動画のとき）
 // file：動画ファイル（順番に読むために使う）
-export async function analyzeVideo(video, file, fps, onProgress, isStopped) {
+export async function analyzeVideo(video, file, fps, onProgress, isStopped, options = {}) {
   await load();
   const total = frameCount(video.duration, fps);
   const w = video.videoWidth;
   const h = video.videoHeight;
   let out;
+  // シャフト：縮小した画像で探す。木の色は見つけたシャフトから覚え直す
+  const canvas = options.shaft ? new OffscreenCanvas(SHAFT_WIDTH, Math.round((SHAFT_WIDTH * h) / w)) : null;
+  const ctx = canvas?.getContext("2d", { willReadFrequently: true });
+  let wood = WOOD;
+  const findShaft = (source) => {
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const found = detectShaft(image, w / canvas.width, out.frames[out.frames.length - 1], wood);
+    if (found?.s > 0.7) wood = learnWood(image, found, w / canvas.width, wood);
+    return found;
+  };
   const detect = (source) => {
     clock += 1000 / fps;
     addResult(out, landmarker.detectForVideo(source, clock), w, h);
     out.hands.push(handResult(handLandmarker.detectForVideo(source, clock), w, h));
+    out.shaft.push(canvas ? findShaft(source) : null);
     onProgress(Math.min(out.frames.length, total), total, out.method);
   };
   video.pause();
 
-  out = { frames: [], world: [], spine: [], hands: [], method: "順番に読む" };
+  out = { frames: [], world: [], spine: [], hands: [], shaft: [], method: "順番に読む" };
   const fast = await decodeFrames(file, detect, () => isStopped() || out.frames.length >= total).catch(() => false);
   if (!fast) {
-    out = { frames: [], world: [], spine: [], hands: [], method: "頭出し" };
+    out = { frames: [], world: [], spine: [], hands: [], shaft: [], method: "頭出し" };
     for (let f = 0; f < total && !isStopped(); f++) {
       await seekTo(video, frameToTime(f, fps));
       detect(video);
     }
   }
   // フレーム数を動画の長さに合わせる（足りないところは「人が見つからない」扱い）
-  for (const list of [out.frames, out.world, out.spine, out.hands]) {
+  for (const list of [out.frames, out.world, out.spine, out.hands, out.shaft]) {
     list.length = Math.min(list.length, total);
     while (list.length < total && !isStopped()) list.push(null);
   }

@@ -8,9 +8,10 @@ import { P } from "./angles.js";
 import { detectStrokes, strokeIndexAt } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
-import { toBodyFrame, estimatePaddle } from "./body3d.js";
+import { toBodyFrame, estimatePaddle, shaftToBody } from "./body3d.js";
 import { viewRepresentative, fuseViews, sideDurations } from "./fusion.js";
 import { correctWorld } from "./hands.js";
+import { cleanShafts } from "./shaft.js";
 import { smoothFrames } from "./smooth.js";
 import { keyFrames } from "./assist.js";
 import { stabilizeLegs } from "./legs.js";
@@ -45,6 +46,10 @@ let sessionId = null;  // 表示中の過去データのID（新しいデータ�
 let sessionDate = null;
 
 const data = () => views[currentView];
+// 画像から見つけたシャフトの向きを選手基準にしたもの（前・後ろの動画。「動画と3Dを並べる」で使う）
+const toShaftBody = (d) => shaftToBody(d.world, d.shaft);
+const shownShaft = (d) => cleanShafts(d.shaft); // 動画に描く分（見つけ違いは外す）
+
 // 3Dの作り方：world を2Dの骨格（手の専用推定・人の補助で直したもの）に合わせる → ぶれを取る → 選手基準に変換 → 脚を安定させる
 const toBody = (d) => (d.world
   ? stabilizeLegs(toBodyFrame(smoothFrames(correctWorld(d.world, d.pose, d.hands ?? [], d.strokes ?? []), d.fps)))
@@ -379,15 +384,19 @@ async function analyzeCurrent(label) {
   if (!video.videoWidth) { showStatus(playbackProblem()); runStatus(`${label}：動画を表示できないため解析できません`); return false; }
   stopRequested = false;
   const started = performance.now();
-  const { frames, world, spine, hands } = await analyzeVideo(video, d.file, fps(), (done, total, method) => {
+  // 前・後ろの動画では、木のシャフトも画像から探す（シャフトの角度に使う）
+  const { frames, world, spine, hands, shaft } = await analyzeVideo(video, d.file, fps(), (done, total, method) => {
     const sec = (performance.now() - started) / 1000;
     runStatus(`${label}… ${done} / ${total} フレーム（${method}・${sec.toFixed(0)}秒、1コマ ${(sec / done).toFixed(2)}秒）`);
-  }, () => stopRequested);
+  }, () => stopRequested, { shaft: currentView === "front" || currentView === "back" });
   if (stopRequested) return false;
   d.pose = frames;
   d.world = world;
   d.spine = spine;
   d.hands = hands;
+  d.shaft = shaft;
+  d.shaftBody = toShaftBody(d);
+  d.shaftShown = shownShaft(d);
   d.body = toBody(d);
   d.strokes = refineToCatch(detectStrokes(frames, fps()), d.body); // 区切り＝キャッチ（推定）
   return true;
@@ -609,9 +618,12 @@ async function openSession(id) {
       world: r.world,
       spine: r.spine ?? null,
       hands: r.hands ?? null,
+      shaft: r.shaft ?? null,
       strokes: r.strokes,
     };
     views[view].body = toBody(views[view]);
+    views[view].shaftBody = toShaftBody(views[view]);
+    views[view].shaftShown = shownShaft(views[view]);
   }
   sessionId = id;
   sessionDate = s.date;
@@ -951,6 +963,7 @@ function update3d(d, frame) {
   let range = [];  // 軌跡を描く区間（ストロークの始まり〜今）
   let drive = [];  // その区間のうち力を入れているところ
   let side = null; // 漕ぐ側（パドルの向きを固定するため）
+  let shafts = []; // 画像から見つけたシャフトの向き（range と同じ並び。なければ null）
 
   if (display === "model") {
     // 代表ストローク（平均）を、平均ストローク時間で繰り返し再生する
@@ -962,6 +975,7 @@ function update3d(d, frame) {
       spine = spinePoints(body, rep.spine?.[index] ?? null);
       range = rep.frames.slice(0, index + 1);
       drive = detectDrive(rep.frames, side)?.mask.slice(0, index + 1) ?? [];
+      shafts = rep.shaft?.slice(0, index + 1) ?? [];
     }
     const sec = fused?.duration?.[side];
     el("loopPhase").value = index;
@@ -978,6 +992,7 @@ function update3d(d, frame) {
       side = d.strokes[n].side;
       range = d.body.slice(start, frame + 1);
       drive = detectDrive(d.body.slice(start, d.strokes[n + 1].frame), side)?.mask.slice(0, range.length) ?? [];
+      shafts = d.shaftBody?.slice(start, frame + 1) ?? [];
     }
     el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定。1方向だけの推定なので、奥行きや隠れた側の手足はずれやすく、参考程度です。フォームの見比べには「3D：平均の漕ぎ」（全方向の得意なところを合わせたもの）を使ってください` : "";
   }
@@ -987,9 +1002,10 @@ function update3d(d, frame) {
     const paddleColor = getComputedStyle(document.documentElement).getPropertyValue("--paddle").trim();
     trails.push({ color: COLOR.left, points: range.map((b) => b?.[P.lWrist] ?? null), drive });
     trails.push({ color: COLOR.right, points: range.map((b) => b?.[P.rWrist] ?? null), drive });
-    trails.push({ color: paddleColor, points: range.map((b) => estimatePaddle(b, size, side)?.tip ?? null), drive });
+    trails.push({ color: paddleColor, points: range.map((b, k) => estimatePaddle(b, size, side, shafts[k])?.tip ?? null), drive });
   }
-  view3d?.updateView3d(body, estimatePaddle(body, size, side), trails, spine);
+  // パドルの向き：画像からシャフトが見つかっていれば、その角度を中心に（前・後ろの動画）
+  view3d?.updateView3d(body, estimatePaddle(body, size, side, shafts[range.length - 1] ?? null), trails, spine);
   el("paddleNote").textContent = size.usedDefaults.length ? "パドル寸法の一部は標準値です（選手欄で入力できます）。" : "";
 }
 
@@ -999,7 +1015,7 @@ function updateDisplay() {
   seek.max = d ? totalFrames() - 1 : 0;
   seek.value = frame;
   el("play").textContent = isPlaying() ? "⏸ 停止" : "▶ 再生";
-  drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null, hasVideo() ? d?.hands?.[frame] : null);
+  drawSkeleton(overlay, hasVideo() ? d?.pose?.[frame] ?? null : null, hasVideo() ? d?.hands?.[frame] : null, hasVideo() ? d?.shaftShown?.[frame] : null);
   // 代表ストロークの再生中は動画の操作を隠す（動画とは別に動くため）
   el("videoControls").hidden = loopVisible();
   el("loopControls").hidden = !loopVisible();

@@ -239,7 +239,7 @@ function selectView(view) {
   el("fpsBox").hidden = !d || d.fpsSource !== "manual";
   showStatus(!d ? "「動画を選択」から、この方向の動画を読み込んでください"
     : d.url ? "読み込み中…"
-    : `このデータは動画を保存していません（${d.name}）。3Dは「3D：平均の漕ぎ」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
+    : `このデータは動画を保存していません（${d.name}）。3Dは「3Dモデル」「動画と3Dを並べる」で見られます。同じ動画を選ぶと動画も表示されます`);
   renderQuality();
   updateDisplay();
 }
@@ -323,7 +323,7 @@ document.querySelectorAll(".tab[data-display]").forEach((tab) => {
   tab.addEventListener("click", () => showDisplay(tab.dataset.display));
 });
 
-// video＝動画だけ、model＝平均の漕ぎ（統合モデルの繰り返し）、compare＝動画と3D（同じコマ）を並べる
+// video＝動画だけ、model＝3Dモデル（統合モデルの繰り返し）、compare＝動画と3D（同じコマ）を並べる
 let display = "video";
 function showDisplay(name) {
   display = name;
@@ -979,7 +979,7 @@ function update3d(d, frame) {
       whole = d.body.slice(start, d.strokes[n + 1].frame);
       shafts = d.shaftBody?.slice(start, d.strokes[n + 1].frame) ?? [];
     }
-    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定。1方向だけの推定なので、奥行きや隠れた側の手足はずれやすく、参考程度です。フォームの見比べには「3D：平均の漕ぎ」（全方向の得意なところを合わせたもの）を使ってください` : "";
+    el("mode3dInfo").textContent = d ? `この動画（${VIEW_LABELS[currentView]}）の同じコマの推定。1方向だけの推定なので、奥行きや隠れた側の手足はずれやすく、参考程度です。フォームの見比べには「3Dモデル」（全方向の得意なところを合わせたもの）を使ってください` : "";
   }
 
   // パドル：ストロークの始まりから今まで、向きがなめらかになるように作る（画像からシャフトが見つかっていればその角度を中心に）

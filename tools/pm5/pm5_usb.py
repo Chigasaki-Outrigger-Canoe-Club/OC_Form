@@ -258,9 +258,22 @@ def broadcast(message):
         q.put(text)
 
 
+recording = {"name": None}  # 記録中のファイル名（拡張子なし）。画面からダウンロードできるようにする
+DOWNLOADS = {"/download/strokes": ".csv", "/download/raw": "_raw.csv"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/events":
+        if self.path in DOWNLOADS and recording["name"]:
+            # 記録中のCSV（そこまでの分）をダウンロードする
+            file = Path(f"{recording['name']}{DOWNLOADS[self.path]}")
+            body = file.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{file.name}"')
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -298,11 +311,13 @@ def main():
     args = parser.parse_args()
 
     name = f"pm5_{datetime.datetime.now():%Y%m%d_%H%M}{'_demo' if args.demo else ''}"
+    recording["name"] = name
     source = Demo() if args.demo else PM5()
     recorder = StrokeRecorder()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"記録を始めました。ブラウザで http://localhost:{args.port} を開くと波形が見られます（終了は Ctrl+C）。")
+    print(f"保存先：{Path.cwd() / name}.csv（1本ごと）、{name}_raw.csv（全測定値）")
     webbrowser.open(f"http://localhost:{args.port}")
 
     with open(f"{name}.csv", "w", newline="", encoding="utf-8") as sf, open(f"{name}_raw.csv", "w", newline="", encoding="utf-8") as rf:

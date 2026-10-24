@@ -1,8 +1,8 @@
 {
  "format": "oc-form-athletes",
  "version": 1,
- "savedAt": "2026-10-24T14:36:11.815Z",
- "current": "amvm9pkzfx9ur",
+ "savedAt": "2026-10-24T14:37:17.356Z",
+ "current": "amvmi630uzqo6",
  "list": [
   {
    "id": "amvgssbbjaf3a",
@@ -36,6 +36,22 @@
     "bladeLength": "48",
     "bladeWidth": "25"
    }
+  },
+  {
+   "id": "amvmi59wbf4m8",
+   "name": "GAI",
+   "values": {
+    "height": "175",
+    "weight": "75",
+    "paddle": "51",
+    "bladeLength": "48",
+    "bladeWidth": "25"
+   }
+  },
+  {
+   "id": "amvmi630uzqo6",
+   "name": "Reo",
+   "values": {}
   }
  ]
 }

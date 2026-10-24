@@ -194,11 +194,15 @@ body {
 .erg-title { margin: 0 0 4px; font-weight: bold; font-size: 0.9rem; }
 .erg-readout { margin: 4px 0 0; }
 
-/* 選手を並べて比べる：PCは4人、スマホは2人 */
-.compare-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.compare-cell .stage { margin: 4px 0; }
+/* 選手を並べて比べる：画面いっぱいに、PCは上下左右の4分割、スマホは上下の2分割 */
+/* 動画と骨格はどちらも object-fit: contain なので、枠の形が変わっても点はずれない */
+.compare-grid { display: grid; grid-template: 1fr 1fr / 1fr 1fr; gap: 8px; height: 100dvh; }
+.compare-cell { display: flex; flex-direction: column; min-height: 0; }
+.compare-cell .stage { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; margin: 4px 0; }
 .compare-cell .btn { width: 100%; }
+.compare-cell p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 900px) {
-  .compare-grid { grid-template-columns: repeat(2, 1fr); }
+  .compare-grid { grid-template: 1fr 1fr / 1fr; }
   .compare-cell:nth-child(n + 3) { display: none; }
 }
+

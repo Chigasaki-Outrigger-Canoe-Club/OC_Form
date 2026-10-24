@@ -4,7 +4,7 @@
 //   各動画から、漕ぐ側（右漕ぎ・左漕ぎ）の代表のストローク（長さが中央値に近いもの）を1本選び、その1本を繰り返し再生する
 //   全員の1ストロークが同じ時間 T で終わるように、動画ごとに再生速度を変える（速度＝その人のストロークの長さ ÷ T）
 //   → 同じ瞬間には、全員がストロークの同じ位置（キャッチからの何%か）にいる
-// 並べる数：PCは4人、スマホ（画面の幅が狭いとき）は2人（CSS で3・4人目を隠す）
+// 並べる数：PCは4人（上下左右の4分割）、スマホ（画面の幅が狭いとき）は2人（上下の2分割。CSS で3・4人目を隠す）
 
 import * as github from "./github.js";
 import { parseSessionFile } from "./sessions.js";
@@ -36,7 +36,6 @@ async function load(cell, path) {
     cell.video.src = URL.createObjectURL(new Blob([await video.blob()], { type: "video/mp4" }));
     cell.canvas.width = r.video.width ?? 1280;  // 骨格の点は元の動画のピクセル座標
     cell.canvas.height = r.video.height ?? 720;
-    cell.box.style.aspectRatio = `${cell.canvas.width} / ${cell.canvas.height}`;
     cell.data = { pose: r.pose, strokes: r.strokes, fps: r.video.fps };
     cell.label.textContent = `${s.athleteName ?? ""} ${s.date ?? ""} ${s.memo ?? ""}`;
   } catch (err) {

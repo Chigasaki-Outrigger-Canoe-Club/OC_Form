@@ -103,21 +103,26 @@ export function averageStrokes(strokes) {
 // 部位：顔、肩、肘、手（手首・指）、腰、脚（膝から下）。MediaPipe の番号で、奇数＝左半身・偶数＝右半身
 const PART_OF = (j) => (j <= 10 ? "head" : j <= 12 ? "shoulder" : j <= 14 ? "elbow" : j <= 22 ? "hand" : j <= 24 ? "hip" : "leg");
 const isLeft = (j) => (j <= 10 ? [1, 2, 3, 7, 9].includes(j) : j % 2 === 1);
-// 横（右・左）：きれいに取れるので、体全体の平均は主に横の動画を使う（カメラ側の半身を重く、反対側はやや軽く）
-// 前・後ろ：シャフトと手の角度（両手の位置）を中心に使い、ほかの部位はほとんど使わない
+// 横（右・左）：きれいに取れるので、関節の位置は横の動画を中心に使う（カメラ側の半身を重く、反対側はやや軽く）
+// 前：シャフトの角度（shaft.js）と手首の位置だけを使う
+// 後ろ：シャフトの角度と、肘と肩の高さ（上下の位置）だけを使う
+// 値は部位ごとの重み。{ x, y, z } のときは軸ごと（X＝左右、Y＝上下、Z＝前後）。書いていない部位・軸は使わない（0）
 export const PART_WEIGHTS = {
   near: { head: 1, shoulder: 1, elbow: 1, hand: 1, hip: 1, leg: 1 },
   far: { head: 1, shoulder: 0.6, elbow: 0.5, hand: 0.5, hip: 0.7, leg: 0.6 },
-  front: { head: 0.1, shoulder: 0.2, elbow: 0.5, hand: 1.5, hip: 0.1, leg: 0.05 },
-  back: { head: 0.1, shoulder: 0.2, elbow: 0.4, hand: 1, hip: 0.1, leg: 0.05 },
+  front: { hand: 2 },
+  back: { shoulder: { y: 2 }, elbow: { y: 2 } },
 };
+const UNUSED = 0.001; // 使わない部位もごくわずかに残す（その部位を撮った動画がほかにないときのため）
 
-// カメラの方向（選手から見た向き。X左・Z前）→ 33点それぞれの重み
+// カメラの方向（選手から見た向き。X左・Z前）→ 33点それぞれの、軸ごとの重み [{ x, y, z }]
 export function jointWeights(cam) {
+  const kind = Math.abs(cam.z) >= Math.abs(cam.x) ? (cam.z > 0 ? "front" : "back") : null;
+  const nearLeft = cam.x > 0; // カメラが選手の左側
   return Array.from({ length: JOINT_COUNT }, (_, j) => {
-    if (Math.abs(cam.z) >= Math.abs(cam.x)) return PART_WEIGHTS[cam.z > 0 ? "front" : "back"][PART_OF(j)];
-    const nearLeft = cam.x > 0; // カメラが選手の左側
-    return PART_WEIGHTS[isLeft(j) === nearLeft ? "near" : "far"][PART_OF(j)];
+    const w = PART_WEIGHTS[kind ?? (isLeft(j) === nearLeft ? "near" : "far")][PART_OF(j)] ?? 0;
+    const axis = (a) => Math.max(typeof w === "number" ? w : (w[a] ?? 0), UNUSED);
+    return { x: axis("x"), y: axis("y"), z: axis("z") };
   });
 }
 
@@ -199,7 +204,7 @@ export function fuseViews(reps) {
           let sum = 0;
           let weight = 0;
           for (const s of sources) {
-            const w = Math.max(s.f[j].v, 0.01) * s.rel[a] * (s.joints?.[j] ?? 1);
+            const w = Math.max(s.f[j].v, 0.01) * s.rel[a] * (s.joints?.[j]?.[a] ?? 1);
             // 大きさの調整は腰の中心（x・z＝0付近）と床（y＝0）を基準に掛ける
             sum += s.f[j][a] * s.k * w;
             weight += w;

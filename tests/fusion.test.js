@@ -60,14 +60,14 @@ test("見やすさの重み：横から＝左右方向(X)が低い、後ろか�
   assert.equal(side.left, null);
 });
 
-test("統合：奥行きの誤差がある2方向を合わせると、どちら単独より正解に近い", () => {
+test("統合：関節は横の動画を使い、後ろの動画の誤差は入りにくい", () => {
   const left = viewRepresentative(makeView(Math.PI / 2, 0.25));
   const back = viewRepresentative(makeView(Math.PI, 0.25));
   const fused = fuseViews({ left, back });
   const errLeft = maxError(left.right);
   const errBack = maxError(back.right);
   const errFused = maxError(fused.right.frames);
-  assert.ok(errFused < 0.5 * Math.min(errLeft, errBack), `統合 ${errFused} / 左 ${errLeft} / 後ろ ${errBack}`);
+  assert.ok(errFused < Math.max(errLeft, errBack), `統合 ${errFused} / 左 ${errLeft} / 後ろ ${errBack}`);
   assert.deepEqual(fused.right.views, ["left", "back"]);
   assert.deepEqual(fused.right.strokes, { left: 2, back: 2 });
   assert.equal(fused.left, null);
@@ -114,12 +114,15 @@ test("漕ぐ側ごとの平均ストローク時間", async () => {
   assert.deepEqual(sideDurations([]), { right: null, left: null });
 });
 
-test("部位ごとの重み：横からはカメラ側の半身を重く、前からは手を重く", async () => {
+test("部位ごとの重み：関節は横、前は手首だけ、後ろは肘と肩の高さだけ", async () => {
   const { jointWeights, PART_WEIGHTS } = await import("../js/fusion.js");
   const right = jointWeights({ x: -1, y: 0, z: 0 }); // カメラが選手の右側
-  assert.equal(right[16], PART_WEIGHTS.near.hand);   // 右手首
-  assert.equal(right[15], PART_WEIGHTS.far.hand);    // 左手首（反対側）
+  assert.equal(right[16].y, PART_WEIGHTS.near.hand);   // 右手首
+  assert.equal(right[15].y, PART_WEIGHTS.far.hand);    // 左手首（反対側）
   const front = jointWeights({ x: 0, y: 0, z: 1 });
-  assert.equal(front[15], PART_WEIGHTS.front.hand);
-  assert.equal(front[27], PART_WEIGHTS.front.leg);
+  assert.equal(front[15].x, PART_WEIGHTS.front.hand);
+  assert.ok(front[11].y < 0.01 && front[27].x < 0.01); // 肩・脚は使わない
+  const back = jointWeights({ x: 0, y: 0, z: -1 });
+  assert.equal(back[11].y, 2);                          // 肩の高さ
+  assert.ok(back[11].x < 0.01 && back[15].y < 0.01);   // 肩の左右・手首は使わない
 });

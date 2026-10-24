@@ -1,8 +1,8 @@
 {
  "format": "oc-form-athletes",
  "version": 1,
- "savedAt": "2026-10-24T14:14:39.746Z",
- "current": "amvmhcwb6erre",
+ "savedAt": "2026-10-24T14:36:11.815Z",
+ "current": "amvm9pkzfx9ur",
  "list": [
   {
    "id": "amvgssbbjaf3a",
@@ -31,10 +31,10 @@
    "name": "Yousuke",
    "values": {
     "height": "165",
-    "weight": "",
-    "paddle": "",
-    "bladeLength": "",
-    "bladeWidth": ""
+    "weight": "65",
+    "paddle": "50",
+    "bladeLength": "48",
+    "bladeWidth": "25"
    }
   }
  ]

@@ -420,7 +420,7 @@ async function analyzeCurrent(label) {
 
 function setAnalyzing(on) {
   analyzing = on;
-  ["runAll", "fileInput"].forEach((id) => (el(id).disabled = on));
+  ["runAll", "saveOnly", "fileInput"].forEach((id) => (el(id).disabled = on));
   el("stop").disabled = !on;
 }
 
@@ -465,15 +465,24 @@ el("runAll").addEventListener("click", async () => {
   await buildAndSave();
 });
 
-// 3. 3Dモデル → 4. 保存
-async function buildAndSave() {
+// 保存：解析し直さず、今の解析結果から 3Dモデル → 保存（解析のあとに点を直したとき用）
+el("saveOnly").addEventListener("click", async () => {
+  if (analyzing) return;
+  if (!athletes.currentAthlete(store)) return runStatus("先に選手を追加・選択してください（保存先になります）");
+  if (!Object.values(views).some((d) => d?.pose)) return runStatus("まだ解析した動画がありません。先に「実行」を押してください");
+  if (finishAdjust) finishAdjust(); // 調整待ちのときは、調整を終えて進める（実行の続きで保存する）
+  else await buildAndSave("3Dモデル・保存");
+});
+
+// 3. 3Dモデル → 4. 保存。done＝終わったときの表示
+async function buildAndSave(done = "骨格推定・調整・3Dモデル・保存") {
   dataChanged();
   if (!fused?.right && !fused?.left) {
-    return runStatus("3/4 3Dモデルを作れませんでした（ストロークを検出できていない可能性）。下のストローク表を確認してください。保存はしていません。");
+    return runStatus("3/4 3Dモデルを作れませんでした（ストロークを検出できていない可能性）。保存はしていません。");
   }
   runStatus("4/4 保存中…");
   const saved = await saveCurrentSession();
-  runStatus(saved ? `完了：骨格推定・調整・3Dモデル・保存が終わりました。${el("fusionInfo").textContent}` : "4/4 保存できませんでした。");
+  runStatus(saved ? `完了：${done}が終わりました。${el("fusionInfo").textContent}` : "4/4 保存できませんでした。");
   showDisplay("model");
 }
 

@@ -99,9 +99,10 @@
       <div class="row">
         <input type="text" id="sessionMemo" class="btn wide" placeholder="メモ（例：40spm、右3本で交代）">
         <button class="btn primary" id="runAll">実行</button>
+        <button class="btn" id="saveOnly" title="解析し直さず、今の解析結果（骨格・調整）から3Dモデルを作って保存します">保存</button>
         <button class="btn" id="stop" disabled>中止</button>
       </div>
-      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。</p>
+      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。解析が終わったあとに点を直したときなどは「保存」を押すと、解析し直さずに3Dモデルを作り直して保存します。</p>
       <details class="sub">
         <summary>保存の設定</summary>
         <label><input type="checkbox" id="ghVideo"> 動画もGitHubに保存する（ブラウザの中で小さくして送ります。1本 約5〜8MB。<strong>公開リポジトリなので、動画も誰でも見られます</strong>）</label><br>

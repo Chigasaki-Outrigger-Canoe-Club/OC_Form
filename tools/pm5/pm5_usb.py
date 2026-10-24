@@ -1,7 +1,7 @@
 """Concept2 PM5 を USB でつなぎ、漕ぎながら記録する。ブラウザで波形をリアルタイムに見られる
 
 使い方（PCで）:
-    pip install hidapi
+    pip install pywinusb   （Windows。Mac・Linux は pip install hidapi）
     python pm5_usb.py           # 記録を始める。ブラウザで http://localhost:8750 を開く（終了は Ctrl+C）
     python pm5_usb.py --demo    # PM5 なしで画面を試す（作った波形を流す）
 
@@ -13,7 +13,7 @@
                       → 「いつ力を入れたか」をキャッチからの時間で後から解析できる
 
 仕組み:
-- PM5 は USB では HID（キーボードなどと同じ種類）として見えるので、hidapi で通信する（ドライバーの入れ替え不要）
+- PM5 は USB では HID（キーボードなどと同じ種類）として見えるので、Windows は pywinusb、Mac・Linux は hidapi で通信する（ドライバーの入れ替え不要）
 - 命令は CSAFE（Concept2 の通信規格）。命令の組み立て・読み取りは Py3Row（BSD ライセンス）の csafe_cmd を使う
 - 50ms ごと（PM の受付間隔）に問い合わせる
 - 力の波形は PM5 が 64Hz（15.625ms ごと）で測った値（単位 lbs）。前回の問い合わせ以降の分だけ返ってくる
@@ -54,16 +54,65 @@ RAW_HEADER = ["Time (seconds)", "Force (lbs)", "Stroke State", "Watts", "Stroke 
 
 
 # ---------------- PM5 との通信 ----------------
+class HidapiLink:
+    """Mac・Linux：hidapi で通信する（pip install hidapi）"""
+
+    def __init__(self):
+        import hid
+        found = hid.enumerate(VENDOR_ID)
+        if not found:
+            raise LookupError
+        self.dev = hid.device()
+        self.dev.open_path(found[0]["path"])
+
+    def send(self, data):
+        self.dev.write(data)
+
+    def receive(self):
+        data = self.dev.read(121, 2000)  # 最大2秒待つ
+        return list(data) if data else None
+
+    def close(self):
+        self.dev.close()
+
+
+class WindowsLink:
+    """Windows：pywinusb で通信する（pip install pywinusb。Python だけで書かれているので、新しい Python でも入る）"""
+
+    def __init__(self):
+        import pywinusb.hid as winhid
+        devices = winhid.HidDeviceFilter(vendor_id=VENDOR_ID).get_devices()
+        if not devices:
+            raise LookupError
+        self.dev = devices[0]
+        self.dev.open()
+        self.inbox = queue.Queue()  # PM5 からの答え（届いた順）
+        self.dev.set_raw_data_handler(lambda data: self.inbox.put(list(data)))
+        self.reports = {r.report_id: r for r in self.dev.find_output_reports()}  # 送り口（大きさごと）
+
+    def send(self, data):
+        while not self.inbox.empty():  # 前の答えの残りを捨てる
+            self.inbox.get()
+        self.reports[data[0]].send(data)  # data[0]＝送り口の番号（csafe_cmd が大きさに合わせて決める）
+
+    def receive(self):
+        try:
+            return self.inbox.get(timeout=2)
+        except queue.Empty:
+            return None
+
+    def close(self):
+        self.dev.close()
+
+
 class PM5:
     """USB（HID）で PM5 と通信する"""
 
     def __init__(self):
-        import hid  # pip install hidapi
-        found = hid.enumerate(VENDOR_ID)
-        if not found:
-            sys.exit("PM5 が見つかりません。USBケーブルとPM5の電源を確認してください。")
-        self.dev = hid.device()
-        self.dev.open_path(found[0]["path"])
+        try:
+            self.link = WindowsLink() if sys.platform == "win32" else HidapiLink()
+        except LookupError:
+            sys.exit("PM5 が見つかりません。USBケーブルとPM5の電源を確認し、Concept2 Utility などPM5を使うアプリを閉じてください。")
         self.last = 0.0
 
     def ask(self):
@@ -71,13 +120,13 @@ class PM5:
         wait = MIN_GAP - (time.monotonic() - self.last)
         if wait > 0:
             time.sleep(wait)
-        self.dev.write(csafe_cmd.write(POLL))
+        self.link.send(csafe_cmd.write(POLL))
         self.last = time.monotonic()
-        for _ in range(20):  # 答えが来るまで（最大2秒）
-            data = self.dev.read(121, 100)
-            if data:
-                return csafe_cmd.read(list(data))
-        return {}
+        data = self.link.receive()
+        return csafe_cmd.read(data) if data else {}
+
+    def close(self):
+        self.link.close()
 
 
 def read_sample(answer):
@@ -280,6 +329,8 @@ def main():
         except KeyboardInterrupt:
             print("\n終了します。")
     server.shutdown()
+    if hasattr(source, "close"):
+        source.close()
     print(f"{recorder.count} ストロークを保存しました：{name}.csv（サイトで読める）、{name}_raw.csv（全測定値）")
 
 

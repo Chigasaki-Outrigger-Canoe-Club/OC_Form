@@ -7,12 +7,13 @@
 2. このフォルダ（`tools/pm5`）をPCに置く（GitHubの「Code → Download ZIP」から取り出すなど）
 3. このフォルダでコマンドプロンプト（ターミナル）を開き、次を実行
    ```
-   pip install hidapi
+   pip install pywinusb
    ```
+   （Mac・Linux は `pip install hidapi`）
 
 ## いちばん簡単な使い方（Windows）
 - `demo.bat` をダブルクリック → PM5 なしで画面を試す（ブラウザが自動で開きます）
-- `start.bat` をダブルクリック → PM5 の記録を始める（初回は hidapi を自動で入れます）
+- `start.bat` をダブルクリック → PM5 の記録を始める（初回は通信用の部品 pywinusb を自動で入れます）
 
 ## コマンドで使う場合
 1. PM5 の電源を入れ、USBケーブルでPCとつなぐ

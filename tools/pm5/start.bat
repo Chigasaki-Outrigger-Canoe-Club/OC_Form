@@ -1,5 +1,5 @@
 @echo off
-rem Start PM5 recording (double-click). Installs hidapi the first time.
+rem Start PM5 recording (double-click). Installs pywinusb the first time.
 rem Find Python: the "py" launcher, or the usual install folder (works even when Python is not on PATH)
 cd /d "%~dp0"
 set PY=
@@ -10,6 +10,6 @@ if not defined PY (
   pause
   exit /b
 )
-%PY% -m pip install --quiet hidapi
+%PY% -m pip install --quiet pywinusb
 %PY% pm5_usb.py
 pause

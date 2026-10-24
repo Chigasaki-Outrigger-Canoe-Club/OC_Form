@@ -10,6 +10,6 @@ if not defined PY (
   pause
   exit /b
 )
-%PY% -m pip install --quiet hidapi
+%PY% -m pip install --quiet pywinusb
 %PY% pm5_usb.py --demo
 pause

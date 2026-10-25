@@ -11,17 +11,28 @@ import { P, MIN_VISIBILITY } from "./angles.js";
 
 // 手の高さの指標：(低い方の手首のy − 腰の中点のy) ÷ 胴の長さ
 // 値が大きいほど手が低い。画像の大きさや選手の大きさの影響を減らすため胴の長さで割る
+// 横から撮ると奥の手首はほとんど隠れる（10/24 の左の動画で見えるのは25%）。
+//   そのため、動画の半分以上で見えている手首だけを使う（両方見えていれば低い方）。途中で使う手首を変えると値が跳ぶため、動画ごとに決める
 export function handSignal(frames) {
+  const seen = (i) => frames.filter((lm) => lm && lm[i].v >= MIN_VISIBILITY).length / (frames.filter(Boolean).length || 1);
+  const wrists = [P.lWrist, P.rWrist].filter((i) => seen(i) >= 0.5);
   return frames.map((lm) => {
-    if (!lm) return null;
-    const pts = [P.lWrist, P.rWrist, P.lHip, P.rHip, P.lShoulder, P.rShoulder].map((i) => lm[i]);
-    if (pts.some((p) => p.v < MIN_VISIBILITY)) return null;
-    const [lw, rw, lh, rh, ls, rs] = pts;
+    if (!lm || !wrists.length) return null; // どちらの手首もほとんど見えない動画（後ろから）は区切れない → 肩の傾きで区切る（tilt.js）
+    const body = [P.lHip, P.rHip, P.lShoulder, P.rShoulder].map((i) => lm[i]);
+    if (body.some((p) => p.v < MIN_VISIBILITY) || wrists.some((i) => lm[i].v < MIN_VISIBILITY)) return null;
+    const [lh, rh, ls, rs] = body;
     const hipY = (lh.y + rh.y) / 2;
     const torso = hipY - (ls.y + rs.y) / 2;
     if (torso <= 0) return null;
-    return (Math.max(lw.y, rw.y) - hipY) / torso;
+    return (Math.max(...wrists.map((i) => lm[i].y)) - hipY) / torso;
   });
+}
+
+// 横の動画で漕ぐ側がわからないストローク（奥の手首が隠れて判定できない）は、カメラ側を漕いでいるとみなす
+// （撮るときはカメラ側を漕ぐことが多い。前・後ろの動画はそのまま。最後の区切りは null のまま）
+export function cameraSide(strokes, view) {
+  if (view !== "left" && view !== "right") return strokes;
+  return strokes.map((s, n) => (s.side || n === strokes.length - 1 ? s : { ...s, side: view }));
 }
 
 // 移動平均（前後 half フレーム）。値なし（null）は除いて平均する

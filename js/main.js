@@ -4,7 +4,7 @@ import { timeToFrame, frameToTime, frameCount, clampFrame, formatTime } from "./
 import { readVideoInfo } from "./mp4-info.js";
 import { analyzeVideo } from "./pose.js";
 import { P } from "./angles.js";
-import { detectStrokes, strokeIndexAt } from "./strokes.js";
+import { detectStrokes, strokeIndexAt, cameraSide } from "./strokes.js";
 import { drawSkeleton, toVideoPoint, nearestJoint, COLOR } from "./overlay.js";
 import { buildCSV } from "./export.js";
 import { toBodyFrame, estimatePaddle, paddleTrack, shaftToBody } from "./body3d.js";
@@ -415,7 +415,7 @@ async function analyzeCurrent(label) {
   d.hands = hands;
   d.shaft = shaft;
   refreshDerived(d);
-  d.strokes = refineToCatch(detectStrokes(frames, fps()), d.body); // 区切り＝キャッチ（推定）
+  d.strokes = refineToCatch(cameraSide(detectStrokes(frames, fps()), currentView), d.body); // 区切り＝キャッチ（推定）
   return true;
 }
 

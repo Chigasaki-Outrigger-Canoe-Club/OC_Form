@@ -3,8 +3,7 @@
 import * as github from "./github.js";
 import { setupCompare } from "./compare.js";
 
-let settings = { ...github.DEFAULT_SETTINGS };
-try { settings = { ...settings, ...JSON.parse(localStorage.getItem(github.SETTINGS_KEY)) }; } catch { /* 保存なし＝既定の保存先 */ }
+let settings = github.loadSettings(localStorage);
 // 再生用の合言葉（R2 に動画を置いているとき）。入れたらこのブラウザに保存し、一覧を読み直す
 const viewKey = document.getElementById("compareViewKey");
 viewKey.value = settings.r2View ?? "";

@@ -10,7 +10,6 @@
   <header class="header">
     <h1>OC Form 解析</h1>
     <a class="nav" href="compare.html">選手比較</a>
-    <span class="badge">MVP 1 ＋ 3D表示（仮実装）</span>
   </header>
 
   <main class="layout">
@@ -34,7 +33,7 @@
         <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
         <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
-      <p class="muted">入力は選択中の選手に自動保存されます（このブラウザ内。GitHubのトークンを入れていればGitHubにも自動で保存され、スマホなどほかの端末でも使えます。「実行」で保存する解析結果にも入ります）。未入力のパドル寸法は標準値を使います。<span id="athleteNote"></span></p>
+      <p class="muted">入力は選択中の選手に自動で保存されます（このブラウザと GitHub）。パドル寸法が未入力なら標準値を使います。身長は cm の換算に使います。<span id="athleteNote"></span></p>
       </div>
 
       <!-- 過去データ（選手の欄でタブを切り替えて選ぶ） -->
@@ -46,7 +45,7 @@
           <tbody id="sessionList"></tbody>
         </table>
       </div>
-      <p class="muted">このブラウザに保存したデータ。行を押すとそのデータを表示します。<span id="sessionNote"></span></p>
+      <p class="muted">このブラウザに保存したデータです。行を押すと表示します。<span id="sessionNote"></span></p>
       <div class="row">
         <label class="btn">
           ファイルから読み込む
@@ -56,9 +55,9 @@
         <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
         <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
       </div>
-      <p class="muted">GitHubに保存したデータ（スマホでも見られます）：</p>
+      <p class="muted">GitHub に保存したデータ（スマホでも見られます）：</p>
       <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
-      <p class="muted">書き出したJSON（GitHubに保存したものも同じ形式）を読み込むと、過去データとして一覧に追加されます。GitHubのデータはトークンなしで読めます（スマホ可）。<span id="storageUsage"></span></p>
+      <p class="muted">書き出した JSON を読み込むと、このブラウザの一覧に追加されます。<span id="storageUsage"></span></p>
       </div>
     </section>
 
@@ -84,27 +83,31 @@
         <button class="btn" id="saveOnly" title="解析し直さず、今の解析結果（骨格・調整）から3Dモデルを作って保存します">保存</button>
         <button class="btn" id="stop" disabled>中止</button>
       </div>
-      <p id="runAllStatus" class="muted">選手を選び、各方向のタブで動画を読み込んでから「実行」を押してください。1. 骨格推定（全方向）→ 2. 骨格の調整（人の手で4場面を合わせる）→ 3. 3Dモデルと改善点 → 4. 保存 の順に進みます（40秒の動画1本の推定で数分かかります）。解析が終わったあとに点を直したときなどは「保存」を押すと、解析し直さずに3Dモデルを作り直して保存します。</p>
+      <p id="runAllStatus" class="muted">選手を選び、方向ごとに動画を読み込んで「実行」を押します。骨格推定 → 骨格の調整 → 3Dモデルと改善点 → 保存 の順に進みます（動画1本で数分）。解析後に点を直したときは「保存」を押すと、解析し直さずに保存します。</p>
       <details class="sub">
         <summary>保存の設定</summary>
-        <label><input type="checkbox" id="ghVideo"> 動画もGitHubに保存する（ブラウザの中で小さくして送ります。1本 約5〜8MB。<strong>公開リポジトリなので、動画も誰でも見られます</strong>）</label><br>
-        <label><input type="checkbox" id="rawExport"> 書き出し・GitHubに全フレームのデータも含める（既定は平均の3Dモデル・ストロークの区切り・2Dの骨格だけ）</label>
-        <p class="muted">「解析 → 3Dモデル → 保存」（または保存）を押すと、このブラウザ内と GitHub に自動で保存します。GitHubの保存先：<span id="ghRepo"></span>。送るのは解析結果（3Dモデル）・選手データと、小さくした動画です（下のチェックで動画を送らないこともできます）。スマホでは、サイトを開くと「過去データ読み出し」に一覧が出ます。<strong>公開リポジトリなので、保存したデータ（選手名・身長・体重・骨格データ）は誰でも見られます。</strong></p>
+        <p class="muted">「実行」「保存」で、このブラウザと次の場所に保存します。解析結果・選手データ＝GitHub（<span id="ghRepo"></span>。<strong>公開リポジトリなので誰でも見られます</strong>）、動画＝Cloudflare R2（再生用の合言葉を知っている人だけが見られます）。保存用の合言葉は、ブラウザごとに1回入れれば次から入力不要です。</p>
         <div class="row">
-          <input type="password" id="ghToken" class="btn wide" placeholder="GitHubのトークン（github_pat_…）" autocomplete="off">
-          <button class="btn" id="ghTest">接続テスト</button>
-        </div>
-        <p id="ghTokenState" class="muted small"></p>
-        <p class="muted"><b>動画の保存先を Cloudflare R2 にする</b>（入れると動画は R2 に、解析結果は GitHub に保存します。R2 の動画は合言葉を知っている人だけが再生できます）</p>
-        <div class="row">
-          <input type="url" id="r2Url" class="btn wide" placeholder="Worker の URL（https://….workers.dev）" autocomplete="off">
           <input type="password" id="r2Upload" class="btn" placeholder="保存用の合言葉" autocomplete="off">
           <input type="password" id="r2View" class="btn" placeholder="再生用の合言葉" autocomplete="off">
-          <button class="btn" id="r2Test">R2の確認</button>
+          <button class="btn" id="r2Test">確認</button>
         </div>
         <p id="r2Note" class="muted"></p>
         <p id="ghNote" class="muted"></p>
-        <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。保存するPC（ブラウザ）ごとに1回だけ入れれば、以後は自動で送ります。別のブラウザ・シークレットウィンドウ・履歴を消したときは、もう一度入れます（スマホで見るだけならトークンは不要）。</p>
+        <label><input type="checkbox" id="ghVideo"> 動画も保存する（ブラウザで小さくして送ります。1本 約5〜8MB）</label><br>
+        <label><input type="checkbox" id="rawExport"> 全フレームのデータも保存・書き出しに含める（ふだんは 3Dモデル・ストロークの区切り・2Dの骨格だけ）</label>
+        <details class="sub">
+          <summary>詳しい設定（ふだんは不要）</summary>
+          <div class="row">
+            <input type="url" id="r2Url" class="btn wide" placeholder="Worker の URL（https://….workers.dev）" autocomplete="off">
+          </div>
+          <div class="row">
+            <input type="password" id="ghToken" class="btn wide" placeholder="GitHub のトークン（直接 GitHub に送るときだけ）" autocomplete="off">
+            <button class="btn" id="ghTest">接続テスト</button>
+          </div>
+          <p id="ghTokenState" class="muted small"></p>
+          <p class="muted">トークンは Worker に入っているので、ふだんは不要です。入れると、Worker を通さずに直接 GitHub に送ります。</p>
+        </details>
       </details>
 
       <div class="row">
@@ -142,7 +145,7 @@
           <input type="range" id="loopPhase" min="0" max="100" value="0" class="wide">
         </div>
         <canvas id="view3d" class="view3d"></canvas>
-        <p class="muted">赤線＝力を入れている区間（手の動きからの推定）。茶色の点＝パドルの持ち手（人差し指と小指の付け根の中点。手首の点とは別）。操作：ドラッグ（1本指）で回転、ホイール・ピンチでズーム、右ドラッグ・2本指で移動</p>
+        <p class="muted">赤線＝力を入れている区間（推定）。茶色の点＝パドルの持ち手。操作：ドラッグ＝回転、右ドラッグ・Shift＋ドラッグ・2本指＝移動、ホイール・ピンチ＝拡大縮小。床のマス目＝25cm。</p>
         <p id="mode3dInfo" class="muted"></p>
         <details class="sub">
           <summary>3Dモデルの設定・説明</summary>
@@ -155,9 +158,14 @@
           </div>
           <p id="fusionInfo" class="muted"></p>
           <p class="muted small">部位ごとの担当カメラ（信頼度 0〜1）… <span id="fusionRoles"></span></p>
-          <p class="muted">操作：ドラッグ＝回転、Shift＋ドラッグ／右ドラッグ＝移動、ホイール＝ズーム。床のマス目＝25cm。</p>
-          <p class="muted">3Dモデル（参考）：フォームの数値は3Dではなく動画の画面上の点（2D）から測っています。3Dは動きのイメージを見るためのものです。各動画のストロークを0〜100%にそろえ、関節ごとに「担当カメラ」を切り替えて作った推定です（4方向の平均ではありません）。手首・肘・脚と体幹の前傾＝横（右・左）、肩の左右の位置・高さの差＝前・後ろ、骨盤の高さの差＝後ろ。担当の信頼度が低いときだけ、ほかの方向を補助に使います。前・後ろの前後の奥行きは使いません。後ろの動画は肩の傾きでストロークを区切り、前の動画の肩の傾きに合わせて位置をそろえます。シャフトの角度は、前・後ろの動画に写った木のシャフトを画像から見つけて使います。足は「両足を前でそろえ、かかと同士は拳1個分（約10cm）、内股にはならない」として置いています。4本は同時撮影ではないため、特定の1ストロークの再現ではありません。おかしい方向があればチェックを外して除けます。</p>
-          <p class="muted">「動画と3Dを並べる」：今の動画の同じコマを3Dにしたもの。1台のカメラからの推定で、奥行き方向の精度は低く、実寸校正はしていません。パドルは「上の手がグリップ、シャフトは両手を通る」と仮定した推定です。<span id="paddleNote"></span></p>
+          <p class="muted">3Dモデルは動きのイメージを見るための参考です（フォームの数値は動画の2Dから測ります）。</p>
+          <ul class="details muted">
+            <li>作り方：各動画のストロークを0〜100%にそろえ、関節ごとに得意な方向を使います（4方向の平均ではありません）。手首・肘・脚・前傾＝横、肩の位置・高さの差＝前と後ろ、骨盤の高さの差＝後ろ。前と後ろの奥行きは使いません。</li>
+            <li>後ろの動画は、肩の傾きでストロークを区切ります。シャフトの角度は、前と後ろの動画に写ったシャフトから求めます。</li>
+            <li>足は「両足を前でそろえ、かかとの間は拳1個分（約10cm）」として置きます。</li>
+            <li>4本は同時に撮っていないため、特定の1ストロークの再現ではありません。おかしい方向はチェックを外すと除けます。</li>
+            <li>「動画と3Dを並べる」は、今のコマを1台のカメラだけで3Dにしたものです。奥行きの精度は低めです。<span id="paddleNote"></span></li>
+          </ul>
         </details>
       </div>
 
@@ -175,14 +183,14 @@
           <option value="1" selected>1倍</option>
           <option value="2">2倍</option>
         </select>
-        <span class="muted">スペース＝再生/停止、← →＝コマ送り。停止中に関節をドラッグすると修正できます（赤い点＝修正済み、白い輪＝手の専用推定、ピンクの点線＝画像から見つけたシャフト）</span>
+        <span class="muted">スペース＝再生・停止、← →＝コマ送り。停止中は関節をドラッグして直せます（赤い点＝直した点、白い輪＝手の推定、ピンクの点線＝見つけたシャフト）。</span>
       </div>
       </div>
 
       <!-- 骨格推定の補助：自信のないフレームを人が直す -->
       <div class="sub" id="assistBox">
         <strong>骨格の調整（人の手で合わせる）</strong>
-        <p class="muted">動画からの推定は精度が高くないため、漕ぐ側ごとに4場面（キャッチ・ドライブ・フィニッシュ・リカバリー）だけ、人が骨格の位置を合わせます。「合わせる」で移動し、動画の上の点をドラッグして実際の位置にしてください（特に両手首＝シャフトの角度、肩）。手首は、パドルを握っている手の付け根（手首のしわ）に合わせます。合わせた量は、同じ漕ぐ側の全ストロークに効き、4場面の間は補間します（動きの形は動画の推定を使います）。調整しない場面があっても進めます。</p>
+        <p class="muted">漕ぐ側ごとに4場面（キャッチ・ドライブ・フィニッシュ・リカバリー）で、点を実際の位置にドラッグします。特に両手首（手首のしわ）と肩を合わせてください。直した量は同じ漕ぐ側の全ストロークに反映され、場面の間は補間します。調整しなくても先へ進めます。</p>
         <div class="row">
           <button class="btn" id="assistMake">この方向の4場面を出す</button>
           <button class="btn primary" id="assistDone">調整を終えて 3Dモデル → 保存</button>
@@ -205,7 +213,7 @@
           <button class="btn" id="truthClear">このフレームの正解を消す</button>
           <button class="btn" id="qualityMake">表を更新</button>
         </div>
-        <p class="muted">「正解を付ける」をオンにして、動画の上の点を実際の関節の位置へドラッグすると、そのフレームの正解（緑の十字）になります。推定や3Dは変わりません。キャッチ・ドライブ・フィニッシュ・リカバリーなど、ばらけた場面で数フレームずつ付けると、正解とのずれが比べられます。</p>
+        <p class="muted">「正解を付ける」をオンにして点を実際の関節の位置へドラッグすると、そのフレームの正解（緑の十字）になります。推定は変わりません。いろいろな場面で数フレームずつ付けると、推定とのずれを比べられます。</p>
         <p id="qualityNote" class="muted"></p>
         <div class="scroll">
           <table class="table">
@@ -213,7 +221,7 @@
             <tbody id="qualityList"></tbody>
           </table>
         </div>
-        <p class="muted">長さは胴の長さ（肩の中点〜腰の中点）に対する割合。跳び＝1フレームで胴の長さの25%以上動いた回数（単発の誤検出の目安）。ぶれ＝位置の2階差分の中央値（細かい揺れ。素早い動きでも大きくなる）。同じ位置のばらつき＝ストロークの同じ位置（0〜100%を5%ごと）での位置のばらつき（推定のぶれとフォームのばらつきの両方を含む）。正解とのずれ以外は「正しさ」ではなく「安定さ」の目安です。この版の MediaPipe（ブラウザ版）は presence を出さないため、信頼度は visibility です。</p>
+        <p class="muted">長さは胴の長さ（肩の中点〜腰の中点）に対する割合です。跳び＝1フレームで胴の25%以上動いた回数（誤検出の目安）。ぶれ＝細かい揺れ（速い動きでも大きくなる）。ばらつき＝ストロークの同じ位置での散らばり（フォームの違いも含む）。正解とのずれ以外は「正しさ」ではなく「安定さ」の目安です。信頼度は visibility（ブラウザ版は presence を出しません）。</p>
       </details>
 
     </section>
@@ -238,7 +246,12 @@
           <li><b>暫定（裏付けなし）</b>：このシステム独自の目安。</li>
         </ul>
       </details>
-      <p class="muted">動画の画面上の点（2D）から測ります。横（右・左）の動画はカメラ側を漕いだストローク（右の動画＝右漕ぎ、左の動画＝左漕ぎ）で前傾・リーチ・肘などを、前・後ろの動画で肩・骨盤・体幹の左右の傾きとシャフトの傾きを測ります。cm は胴の長さを身長の29%とみなして換算した目安です。上体のねじれは奥行きが必要なため測りません。「改善候補」＝目安から外れた項目、「左右差」＝目安の範囲内でも右漕ぎと左漕ぎで差が大きい項目です。各項目の「根拠」に、目安のもとにした資料を示しています。アウトリガーの研究はまだ少なく、確定した「お手本」の数値はありません。ボートの資料は考え方（体幹の使い方）だけを参考にしていて、競技も動きも違います（値は <code>js/feedback.js</code> の LIMITS で変更できます）。気になる項目は動画で確認してください。</p>
+      <ul class="details muted">
+        <li>動画の2D（画面上の点）から測ります。横の動画＝カメラ側を漕いだストローク（右の動画は右漕ぎ、左の動画は左漕ぎ）で前傾・リーチ・肘など。前と後ろの動画＝肩・骨盤・体幹の左右の傾き、シャフトの傾き。</li>
+        <li>cm は胴の長さを身長の29%として換算した目安です。上体のねじれは奥行きが必要なため測りません。</li>
+        <li>改善候補＝目安から外れた項目。左右差＝右漕ぎと左漕ぎの差が大きい項目。目安の出どころは各項目の「根拠」と上の資料にあります（OCの研究は少なく、確定したお手本の数値はありません）。</li>
+        <li>気になる項目は動画で確かめてください。</li>
+      </ul>
     </section>
 
 

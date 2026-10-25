@@ -15,9 +15,17 @@ export const DEFAULT_SETTINGS = {
   owner: "chigasaki-outrigger-canoe-club",
   repo: "OC_Form",
   branch: "data",
-  token: "", // トークンが入っていれば、保存のたびに自動で送る
+  token: "", // トークンが入っていれば直接 GitHub に送る。空なら Worker（r2Url）経由で送る（トークンは Worker にある）
+  r2Url: "https://oc-form-video.manato-inokuchi.workers.dev", // 動画の保存先（R2）と GitHub への保存を受け持つ Worker
   raw: false, // true なら全フレームのデータも送る（既定は平均の3Dモデルとストロークだけ）
 };
+
+// ブラウザに保存した設定を読む（なければ既定。Worker の URL が空なら既定の Worker を使う）
+export function loadSettings(storage) {
+  let saved = {};
+  try { saved = JSON.parse(storage.getItem(SETTINGS_KEY)) ?? {}; } catch { /* 保存なし・読めない環境 */ }
+  return { ...DEFAULT_SETTINGS, ...saved, r2Url: saved.r2Url || DEFAULT_SETTINGS.r2Url };
+}
 
 // ---------- 計算・変換（テスト可能） ----------
 
@@ -100,7 +108,8 @@ export const rawUrl = (settings, path) =>
   `https://raw.githubusercontent.com/${settings.owner}/${settings.repo}/${settings.branch}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 // ファイルを保存（同じファイルがあれば上書き）。content：文字列かバイト列。戻り値：GitHub上のURL
-async function putFile(settings, path, content, message, fetchFn) {
+async function putFile(settings, path, content, message, fetchFn = fetch) {
+  if (!settings.token) return putViaWorker(settings, path, content, message, fetchFn);
   const api = client(settings, fetchFn);
   await ensureBranch(api, settings);
   const urlPath = `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
@@ -111,6 +120,19 @@ async function putFile(settings, path, content, message, fetchFn) {
   });
   return result.content.html_url;
 }
+
+// Worker 経由で保存（トークンは Worker の Secret にあり、サイトは保存用の合言葉だけを送る）
+async function putViaWorker(settings, path, content, message, fetchFn) {
+  if (!settings.r2Url) throw new Error("保存先がありません（トークンか Worker の URL が必要です）");
+  const res = await fetchFn(`${settings.r2Url.replace(/\/+$/, "")}/github/${path.split("/").map(encodeURIComponent).join("/")}`, {
+    method: "PUT", body: content, headers: { "X-Upload-Key": settings.r2Upload || "", "X-Message": encodeURIComponent(message) },
+  });
+  if (!res.ok) throw new Error(`Worker ${res.status}：${await res.text()}`);
+  return (await res.json()).url;
+}
+
+// 保存できる設定か（トークン、または Worker の URL と保存用の合言葉）
+export const canSave = (settings) => Boolean(settings.token || (settings.r2Url && settings.r2Upload));
 
 // セッションを保存
 export function uploadSession(settings, session, fetchFn) {

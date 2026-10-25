@@ -160,11 +160,11 @@ function saveAthletes(next) {
   uploadAthletesSoon();
 }
 
-// 選手データはGitHubにも自動で保存する（トークンがあるとき。入力が続くあいだは待って、まとめて1回送る）
+// 選手データはGitHubにも自動で保存する（保存できる設定のとき。入力が続くあいだは待って、まとめて1回送る）
 let athleteTimer = null;
 function uploadAthletesSoon() {
   clearTimeout(athleteTimer);
-  if (!ghSettings.token || !store.list.length) return;
+  if (!github.canSave(ghSettings) || !store.list.length) return;
   athleteTimer = setTimeout(() => github.uploadAthletes(ghSettings, athletes.buildBackup(store)).catch(() => {}), 2000);
 }
 
@@ -458,7 +458,7 @@ el("runAll").addEventListener("click", async () => {
   // 2. 骨格の調整（人が4場面を合わせる。「調整を終えて…」を押すまで待つ）
   makeAssistRows();
   if (assistRows.length) {
-    runStatus("2/4 骨格の調整：下の表の「合わせる」で各場面へ移動し、点をドラッグして実際の位置に合わせてください。終わったら「調整を終えて 3Dモデル → 保存」を押します（調整しなくても進めます）。");
+    runStatus("2/4 骨格の調整：下の表の「合わせる」で場面へ移動し、点をドラッグして合わせます。終わったら「調整を終えて 3Dモデル → 保存」を押してください（調整なしでも進めます）。");
     el("assistBox").scrollIntoView({ behavior: "smooth", block: "start" });
     await new Promise((resolve) => (finishAdjust = resolve));
     finishAdjust = null;
@@ -483,7 +483,7 @@ async function buildAndSave(done = "骨格推定・調整・3Dモデル・保存
   }
   runStatus("4/4 保存中…");
   const saved = await saveCurrentSession();
-  runStatus(saved ? `完了：${done}が終わりました。${el("fusionInfo").textContent}` : "4/4 保存できませんでした。");
+  runStatus(saved ? `完了：${done}が終わりました。${el("ghNote").textContent}` : "4/4 保存できませんでした。"); // GitHub・R2 の結果も見えるように
   showDisplay("model");
 }
 
@@ -551,7 +551,7 @@ function renderFeedback(rows) {
   }
 }
 
-// ================= 保存（ブラウザ内。設定によりGitHubにも） =================
+// ================= 保存（ブラウザ内と GitHub・R2） =================
 async function saveCurrentSession() {
   const a = athletes.currentAthlete(store);
   if (!a) { el("sessionNote").textContent = "選手が選ばれていないため保存できません"; return false; }
@@ -576,8 +576,7 @@ async function saveCurrentSession() {
 
 // ---- GitHubへの自動保存（解析結果のみ） ----
 const GITHUB_KEY = github.SETTINGS_KEY;
-let ghSettings = { ...github.DEFAULT_SETTINGS };
-try { ghSettings = { ...ghSettings, ...JSON.parse(localStorage.getItem(GITHUB_KEY)) }; } catch { /* 保存なし */ }
+let ghSettings = github.loadSettings(localStorage);
 el("rawExport").checked = ghSettings.raw;
 el("rawExport").addEventListener("change", () => saveGhSettings());
 el("ghVideo").checked = ghSettings.video ?? true; // 初期は「動画も保存する」
@@ -596,7 +595,8 @@ el("r2Test").addEventListener("click", async () => {
   el("r2Note").textContent = "確認中…";
   try {
     const ok = await r2.checkR2(ghSettings);
-    el("r2Note").textContent = `Worker に届きました。保存用の合言葉：${ok.upload ? "OK" : "違います"}、再生用：${ok.view ? "OK" : "違います"}`;
+    const mark = (v) => (v ? "OK" : "NG");
+    el("r2Note").textContent = `保存用の合言葉：${mark(ok.upload)}、再生用：${mark(ok.view)}、Worker の GitHub トークン：${ok.github ? "あり" : "なし（Cloudflare で GITHUB_TOKEN を入れてください）"}`;
   } catch (err) {
     el("r2Note").textContent = `確認できません：${err.message}`;
   }
@@ -609,10 +609,12 @@ function saveGhSettings() {
 }
 
 // 貼り付けた時点で保存する（欄から外れるのを待たない）。次からは入力しなくてよいことを表示する
-const showTokenState = () => (el("ghTokenState").textContent = ghSettings.token
-  ? `トークン：このブラウザに保存済み（…${ghSettings.token.slice(-4)}）。次からは入力不要です`
-  : "トークン：未入力（保存するPCで1回だけ入れてください）");
+const showTokenState = () => {
+  el("ghTokenState").textContent = ghSettings.token ? `トークン：保存済み（…${ghSettings.token.slice(-4)}）。直接 GitHub に送ります` : "トークン：なし（Worker を通して保存します）";
+  el("r2Note").textContent = ghSettings.r2Upload ? "保存用の合言葉：このブラウザに保存済み（次から入力不要）" : "保存用の合言葉：未入力（保存するには1回入れてください）";
+};
 el("ghToken").addEventListener("input", () => { saveGhSettings(); showTokenState(); });
+el("r2Upload").addEventListener("input", showTokenState);
 showTokenState();
 
 el("ghTest").addEventListener("click", async () => {
@@ -626,9 +628,9 @@ el("ghTest").addEventListener("click", async () => {
   }
 });
 
-// トークンが入っていれば、解析結果と選手データを送る。失敗してもブラウザ内の保存はそのまま
+// 解析結果・選手データ（と動画）を送る。失敗してもブラウザ内の保存はそのまま
 async function uploadToGitHub(session) {
-  if (!ghSettings.token) { el("ghNote").textContent = "トークンが未入力のため、GitHubには保存していません（スマホで見るには「保存の設定」でトークンを入れてください）。"; return; }
+  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "保存用の合言葉が未入力のため、このブラウザにだけ保存しました（「保存の設定」で入れてください）。"; return; }
   el("ghNote").textContent = "GitHubに保存中…";
   try {
     if (el("ghVideo").checked) await uploadVideos(session);
@@ -641,14 +643,14 @@ async function uploadToGitHub(session) {
   }
 }
 
-// 動画を小さくしてGitHubに送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
+// 動画を小さくして R2（なければ GitHub）に送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
 async function uploadVideos(session) {
   for (const [view, d] of Object.entries(views)) {
     if (!d?.file || d.githubVideo || d.r2Video || !d.width) continue;
     el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています…`;
     const blob = await compressVideo(d.file, { width: d.width, height: d.height, duration: (d.pose?.length ?? 0) / d.fps }, d.fps,
       (r) => (el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています… ${Math.round(r * 100)}%`));
-    if (!blob) { el("ghNote").textContent = `${VIEW_LABELS[view]}の動画は、このブラウザでは小さくできないため送りません`; continue; }
+    if (!blob) { el("ghNote").textContent = `${VIEW_LABELS[view]}の動画は、このブラウザでは小さくできないため送りません（Chrome か Edge を使ってください）`; continue; }
     // 動画の保存先：R2 の Worker が設定されていれば R2、なければ GitHub
     const place = r2.useR2(ghSettings) ? "R2" : "GitHub";
     el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）を${place}に送っています…`;

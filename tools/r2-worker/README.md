@@ -15,5 +15,5 @@ R2 の鍵と GitHub のトークンはサイトに置かず、間に立つ Worke
    - `VIEW_KEY`：再生用（メンバーに伝える。入れなければ誰でも再生できる）
    - `GITHUB_TOKEN`：GitHub の Fine-grained token（OC_Form だけ、Contents を Read and write）。解析結果を Worker から GitHub に保存するのに使う（サイトにトークンを入れなくてよくなる）
 7. **URL を控える**：Worker の画面に出る `https://oc-form-video.〇〇.workers.dev`
-8. **サイトに入れる**：解析ページ「保存の設定」→ 保存用・再生用の合言葉 →「確認」で、合言葉が OK・GitHub トークンが「あり」になれば完了（Worker の URL は最初から入っている）
+8. **サイトに入れる**：解析ページ「保存の設定」→ 合言葉（UPLOAD_KEY）→「確認」で、合言葉 OK・GitHub トークン「あり」になれば完了（Worker の URL は最初から入っている。保存用の合言葉で動画も再生できる）
    - スマホなどで見るだけの人は、選手比較ページの「再生用の合言葉」だけを入れる

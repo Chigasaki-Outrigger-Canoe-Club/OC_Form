@@ -596,7 +596,7 @@ el("r2Test").addEventListener("click", async () => {
   try {
     const ok = await r2.checkR2(ghSettings);
     const mark = (v) => (v ? "OK" : "NG");
-    el("r2Note").textContent = `保存用の合言葉：${mark(ok.upload)}、再生用：${mark(ok.view)}、Worker の GitHub トークン：${ok.github ? "あり" : "なし（Cloudflare で GITHUB_TOKEN を入れてください）"}`;
+    el("r2Note").textContent = `合言葉：${mark(ok.upload)}、動画の再生：${mark(ok.view)}、Worker の GitHub トークン：${ok.github ? "あり" : "なし（Cloudflare で GITHUB_TOKEN を入れてください）"}`;
   } catch (err) {
     el("r2Note").textContent = `確認できません：${err.message}`;
   }
@@ -611,7 +611,7 @@ function saveGhSettings() {
 // 貼り付けた時点で保存する（欄から外れるのを待たない）。次からは入力しなくてよいことを表示する
 const showTokenState = () => {
   el("ghTokenState").textContent = ghSettings.token ? `トークン：保存済み（…${ghSettings.token.slice(-4)}）。直接 GitHub に送ります` : "トークン：なし（Worker を通して保存します）";
-  el("r2Note").textContent = ghSettings.r2Upload ? "保存用の合言葉：このブラウザに保存済み（次から入力不要）" : "保存用の合言葉：未入力（保存するには1回入れてください）";
+  el("r2Note").textContent = ghSettings.r2Upload ? "合言葉：このブラウザに保存済み（次から入力不要）" : "合言葉：未入力（保存するには1回入れてください）";
 };
 el("ghToken").addEventListener("input", () => { saveGhSettings(); showTokenState(); });
 el("r2Upload").addEventListener("input", showTokenState);
@@ -630,7 +630,7 @@ el("ghTest").addEventListener("click", async () => {
 
 // 解析結果・選手データ（と動画）を送る。失敗してもブラウザ内の保存はそのまま
 async function uploadToGitHub(session) {
-  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "保存用の合言葉が未入力のため、このブラウザにだけ保存しました（「保存の設定」で入れてください）。"; return; }
+  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "合言葉が未入力のため、このブラウザにだけ保存しました（「保存の設定」で入れてください）。"; return; }
   el("ghNote").textContent = "GitHubに保存中…";
   try {
     if (el("ghVideo").checked) await uploadVideos(session);

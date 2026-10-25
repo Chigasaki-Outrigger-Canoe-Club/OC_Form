@@ -7,10 +7,12 @@ import * as github from "./github.js";
 const base = (settings) => (settings.r2Url || "").replace(/\/+$/, "");
 const encode = (path) => path.split("/").map(encodeURIComponent).join("/");
 export const useR2 = (settings) => Boolean(base(settings));
+// 合言葉のヘッダー。保存用の合言葉でも再生できる（Worker が受け付ける）ので、保存する人は合言葉1つでよい
+const keyHeaders = (settings) => ({ "X-Upload-Key": settings.r2Upload || "", "X-View-Key": settings.r2View || "" });
 
 // 合言葉の確認 → { upload, view }
 export async function checkR2(settings, fetchFn = fetch) {
-  const res = await fetchFn(`${base(settings)}/check`, { headers: { "X-Upload-Key": settings.r2Upload || "", "X-View-Key": settings.r2View || "" } });
+  const res = await fetchFn(`${base(settings)}/check`, { headers: keyHeaders(settings) });
   if (!res.ok) throw new Error(`Worker に届きません（${res.status}）`);
   return res.json();
 }
@@ -29,7 +31,7 @@ export async function uploadVideoR2(settings, session, view, blob, fetchFn = fet
 export async function fetchVideo(settings, meta, fetchFn = fetch) {
   try {
     if (meta?.r2 && useR2(settings)) {
-      const res = await fetchFn(`${base(settings)}/videos/${encode(meta.r2)}`, { headers: { "X-View-Key": settings.r2View || "" } });
+      const res = await fetchFn(`${base(settings)}/videos/${encode(meta.r2)}`, { headers: keyHeaders(settings) });
       if (res.ok) return new File([await res.blob()], meta.r2.split("/").pop(), { type: "video/mp4" });
     }
     if (meta?.github) {

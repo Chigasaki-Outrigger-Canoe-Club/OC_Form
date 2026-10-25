@@ -4,9 +4,11 @@ import * as github from "./github.js";
 import { setupCompare } from "./compare.js";
 
 let settings = github.loadSettings(localStorage);
-// 再生用の合言葉（R2 に動画を置いているとき）。入れたらこのブラウザに保存し、一覧を読み直す
+// 動画を見るための合言葉（保存用・再生用のどちらでもよい）。入れたらこのブラウザに保存し、一覧を読み直す
+// 解析ページで合言葉を入れたブラウザなら、入力不要
 const viewKey = document.getElementById("compareViewKey");
-viewKey.value = settings.r2View ?? "";
+viewKey.value = settings.r2View || settings.r2Upload || "";
+viewKey.hidden = Boolean(settings.r2Upload); // 解析ページで入れてあれば出さない
 viewKey.addEventListener("change", () => {
   settings = { ...settings, r2View: viewKey.value.trim() };
   try { localStorage.setItem(github.SETTINGS_KEY, JSON.stringify(settings)); } catch { /* 保存できない環境 */ }

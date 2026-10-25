@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker, { objectKey } from "../tools/r2-worker/worker.js";
+import worker from "../tools/r2-worker/worker.js";
 
 // R2 の代わり（メモリ）
 function fakeEnv(viewKey = "") {
@@ -15,10 +15,13 @@ function fakeEnv(viewKey = "") {
 }
 const req = (method, path, headers = {}, body) => new Request(`https://w.example${path}`, { method, headers, body });
 
-test("保存先の名前：/videos/ のあとだけ。「..」は認めない", () => {
-  assert.equal(objectKey("/videos/data/%E9%81%B8%E6%89%8B/a.mp4"), "data/選手/a.mp4");
-  assert.equal(objectKey("/videos/../x"), null);
-  assert.equal(objectKey("/other/x"), null);
+test("保存先の名前：/videos/ のあとだけ。「..」やほかの場所は 404", async () => {
+  const env = fakeEnv();
+  const put = (path) => worker.fetch(req("PUT", path, { "X-Upload-Key": "up" }, "x"), env);
+  assert.equal((await put("/videos/data/%E9%81%B8%E6%89%8B/a.mp4")).status, 200);
+  assert.equal((await worker.fetch(req("GET", "/videos/data/%E9%81%B8%E6%89%8B/a.mp4"), env)).status, 200);
+  assert.equal((await put("/videos/..%2Fx")).status, 404);
+  assert.equal((await put("/other/x")).status, 404);
 });
 
 test("保存は保存用の合言葉が必要、再生は再生用の合言葉が必要", async () => {

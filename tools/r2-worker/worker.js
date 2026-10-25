@@ -21,7 +21,7 @@ const cors = {
 const reply = (body, status = 200, headers = {}) => new Response(body, { status, headers: { ...cors, ...headers } });
 
 // 保存先の名前：/videos/ のあと。「..」や先頭の / は認めない（ほかの場所を指さないように）
-export function objectKey(pathname) {
+function objectKey(pathname) {
   if (!pathname.startsWith("/videos/")) return null;
   const key = decodeURIComponent(pathname.slice("/videos/".length));
   if (!key || key.startsWith("/") || key.split("/").includes("..") || key.length > 300) return null;

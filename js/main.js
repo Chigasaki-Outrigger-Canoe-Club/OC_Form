@@ -630,7 +630,12 @@ el("ghTest").addEventListener("click", async () => {
 
 // 解析結果・選手データ（と動画）を送る。失敗してもブラウザ内の保存はそのまま
 async function uploadToGitHub(session) {
-  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "合言葉が未入力のため、このブラウザにだけ保存しました（「保存の設定」で入れてください）。"; return; }
+  // 合言葉がまだなら、その場で聞く（入れた合言葉はこのブラウザに残し、次からは聞かない）
+  if (!github.canSave(ghSettings)) {
+    const key = (prompt("合言葉を入れると、GitHub と R2 にも保存します（このブラウザでは次から入力不要）") || "").trim();
+    if (key) { el("r2Upload").value = key; saveGhSettings(); showTokenState(); }
+  }
+  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "合言葉が未入力のため、このブラウザにだけ保存しました。"; return; }
   el("ghNote").textContent = "GitHubに保存中…";
   try {
     if (el("ghVideo").checked) await uploadVideos(session);
@@ -640,6 +645,8 @@ async function uploadToGitHub(session) {
     el("ghNote").append("GitHubに保存しました：", Object.assign(document.createElement("a"), { href: url, target: "_blank", textContent: github.sessionPath(session) }));
   } catch (err) {
     el("ghNote").textContent = `GitHubに保存できませんでした（ブラウザ内には保存済み）：${err.message}`;
+    // 合言葉が違うときは消して、次の保存でもう一度聞く
+    if (/401/.test(err.message)) { el("r2Upload").value = ""; saveGhSettings(); showTokenState(); }
   }
 }
 

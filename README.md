@@ -15,10 +15,11 @@
 ## 保存先
 | もの | 場所 | 見られる人 |
 |---|---|---|
-| 解析結果・選手データ | このブラウザ（IndexedDB・localStorage）と GitHub の `data` ブランチ | **公開リポジトリなので誰でも** |
-| 動画（小さくしたもの） | Cloudflare R2（Worker 経由） | 再生用の合言葉を知っている人 |
+| 解析結果・選手データ・動画 | このブラウザ（IndexedDB・localStorage）と Cloudflare R2（Worker 経由） | サイトを開ける人（見るのに合言葉は不要） |
+| サイト本体 | GitHub（GitHub Pages） | 誰でも |
 
-- サイトには保存用の合言葉だけを入れる（ブラウザごとに1回）。GitHub のトークンは Worker の Secret に置く
+- 保存には合言葉（Worker の UPLOAD_KEY）が要る。保存のときに聞かれ、ブラウザごとに1回でよい
+- 前に GitHub の `data` ブランチへ保存したデータは読むだけ。「保存の設定」の「GitHub の古いデータを Cloudflare へ移す」で移せる
 - Worker の準備は `tools/r2-worker/README.md`
 
 ## 解析の考え方
@@ -38,7 +39,7 @@
 | `js/fusion.js`・`body3d.js`・`view3d.js` | 3Dモデル |
 | `js/compare.js` | 選手比較 |
 | `js/sessions.js`・`github.js`・`r2.js` | 保存 |
-| `tools/r2-worker/` | Cloudflare Worker（動画の R2 と GitHub への保存） |
+| `tools/r2-worker/` | Cloudflare Worker（R2 への保存と読み出し。GitHub と連携して自動で作り直される） |
 | `tools/pm5/` | Concept2 PM5 を USB で記録するツール |
 | `docs/requirements.md` | 要件・決定事項・会話の記録 |
 

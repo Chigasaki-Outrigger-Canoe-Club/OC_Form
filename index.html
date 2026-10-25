@@ -33,7 +33,7 @@
         <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
         <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
-      <p class="muted">入力は選択中の選手に自動で保存されます（このブラウザと GitHub）。パドル寸法が未入力なら標準値を使います。身長は cm の換算に使います。<span id="athleteNote"></span></p>
+      <p class="muted">入力は選択中の選手に自動で保存されます（このブラウザと Cloudflare）。パドル寸法が未入力なら標準値を使います。身長は cm の換算に使います。<span id="athleteNote"></span></p>
       </div>
 
       <!-- 過去データ（選手の欄でタブを切り替えて選ぶ） -->
@@ -51,11 +51,11 @@
           ファイルから読み込む
           <input type="file" id="importSession" accept=".json,application/json" hidden>
         </label>
-        <button class="btn" id="ghList">GitHubの一覧を更新</button>
+        <button class="btn" id="ghList">一覧を更新</button>
         <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
         <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
       </div>
-      <p class="muted">GitHub に保存したデータ（スマホでも見られます）：</p>
+      <p class="muted">保存したデータ（どの端末からでも見られます）：</p>
       <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
       <p class="muted">書き出した JSON を読み込むと、このブラウザの一覧に追加されます。<span id="storageUsage"></span></p>
       </div>
@@ -86,11 +86,11 @@
       <p id="runAllStatus" class="muted">選手を選び、方向ごとに動画を読み込んで「実行」を押します。骨格推定 → 骨格の調整 → 3Dモデルと改善点 → 保存 の順に進みます（動画1本で数分）。解析後に点を直したときは「保存」を押すと、解析し直さずに保存します。</p>
       <details class="sub">
         <summary>保存の設定</summary>
-        <p class="muted">合言葉を入れると、「実行」「保存」で GitHub（解析結果・選手データ。<strong>公開リポジトリなので誰でも見られます</strong>）と R2（動画）にも保存します。ブラウザごとに1回入れれば、次から入力不要です。</p>
-        <p class="muted small">保存先：<span id="ghRepo"></span></p>
+        <p class="muted">「実行」「保存」で、解析結果・選手データ・動画を Cloudflare に保存します（選手比較・スマホでも見られます）。合言葉は保存のときに聞かれます。ブラウザごとに1回入れれば、次から入力不要です。</p>
         <div class="row">
-          <input type="password" id="r2Upload" class="btn" placeholder="合言葉（保存用）" autocomplete="off">
+          <input type="password" id="r2Upload" class="btn" placeholder="合言葉" autocomplete="off">
           <button class="btn" id="r2Test">確認</button>
+          <button class="btn" id="migrate">GitHub の古いデータを Cloudflare へ移す</button>
         </div>
         <p id="r2Note" class="muted"></p>
         <p id="ghNote" class="muted"></p>
@@ -100,14 +100,8 @@
           <summary>詳しい設定（ふだんは不要）</summary>
           <div class="row">
             <input type="url" id="r2Url" class="btn wide" placeholder="Worker の URL（https://….workers.dev）" autocomplete="off">
-            <input type="password" id="r2View" class="btn" placeholder="再生用の合言葉（見るだけの人）" autocomplete="off">
+            <input type="password" id="r2View" class="btn" placeholder="見る用の合言葉（Cloudflare で決めたときだけ）" autocomplete="off">
           </div>
-          <div class="row">
-            <input type="password" id="ghToken" class="btn wide" placeholder="GitHub のトークン（直接 GitHub に送るときだけ）" autocomplete="off">
-            <button class="btn" id="ghTest">接続テスト</button>
-          </div>
-          <p id="ghTokenState" class="muted small"></p>
-          <p class="muted">トークンは Worker に入っているので、ふだんは不要です。入れると、Worker を通さずに直接 GitHub に送ります。</p>
         </details>
       </details>
 

@@ -160,12 +160,12 @@ function saveAthletes(next) {
   uploadAthletesSoon();
 }
 
-// 選手データはGitHubにも自動で保存する（保存できる設定のとき。入力が続くあいだは待って、まとめて1回送る）
+// 選手データは Cloudflare にも自動で保存する（合言葉があるとき。入力が続くあいだは待って、まとめて1回送る）
 let athleteTimer = null;
 function uploadAthletesSoon() {
   clearTimeout(athleteTimer);
-  if (!github.canSave(ghSettings) || !store.list.length) return;
-  athleteTimer = setTimeout(() => github.uploadAthletes(ghSettings, athletes.buildBackup(store)).catch(() => {}), 2000);
+  if (!r2.canSave(ghSettings) || !store.list.length) return;
+  athleteTimer = setTimeout(() => r2.uploadAthletes(ghSettings, athletes.buildBackup(store)).catch(() => {}), 2000);
 }
 
 function renderAthletes() {
@@ -574,95 +574,88 @@ async function saveCurrentSession() {
 }
 
 
-// ---- GitHubへの自動保存（解析結果のみ） ----
+// ---- Cloudflare への保存（解析結果・選手データ・動画）。GitHub はサイトの表示だけ ----
 const GITHUB_KEY = github.SETTINGS_KEY;
 let ghSettings = github.loadSettings(localStorage);
 el("rawExport").checked = ghSettings.raw;
 el("rawExport").addEventListener("change", () => saveGhSettings());
 el("ghVideo").checked = ghSettings.video ?? true; // 初期は「動画も保存する」
-el("ghVideo").addEventListener("change", () => saveGhSettings());
-el("ghToken").value = ghSettings.token;
-el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
 
-// R2（動画の保存先）の設定
+// 設定の欄（Worker の URL・合言葉）。入力した時点でこのブラウザに保存する
 const R2_FIELDS = { r2Url: "r2Url", r2Upload: "r2Upload", r2View: "r2View" };
 Object.entries(R2_FIELDS).forEach(([key, id]) => {
   el(id).value = ghSettings[key] ?? "";
-  el(id).addEventListener("input", () => saveGhSettings());
+  el(id).addEventListener("input", () => { saveGhSettings(); showKeyState(); });
 });
+el("ghVideo").addEventListener("change", () => saveGhSettings());
+
+function saveGhSettings() {
+  ghSettings = { ...ghSettings, raw: el("rawExport").checked, video: el("ghVideo").checked,
+    ...Object.fromEntries(Object.entries(R2_FIELDS).map(([key, id]) => [key, el(id).value.trim()])) };
+  try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
+}
+
+const showKeyState = () => (el("r2Note").textContent = ghSettings.r2Upload ? "合言葉：このブラウザに保存済み（次から入力不要）" : "合言葉：未入力（保存のときに聞きます）");
+showKeyState();
+
 el("r2Test").addEventListener("click", async () => {
   saveGhSettings();
   el("r2Note").textContent = "確認中…";
   try {
     const ok = await r2.checkR2(ghSettings);
-    const mark = (v) => (v ? "OK" : "NG");
-    el("r2Note").textContent = `合言葉：${mark(ok.upload)}、動画の再生：${mark(ok.view)}、Worker の GitHub トークン：${ok.github ? "あり" : "なし（Cloudflare で GITHUB_TOKEN を入れてください）"}`;
+    el("r2Note").textContent = `合言葉：${ok.upload ? "OK" : "違います"}、見る：${ok.view ? "OK" : "NG"}`;
   } catch (err) {
     el("r2Note").textContent = `確認できません：${err.message}`;
   }
 });
 
-function saveGhSettings() {
-  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked, video: el("ghVideo").checked,
-    ...Object.fromEntries(Object.entries(R2_FIELDS).map(([key, id]) => [key, el(id).value.trim()])) };
-  try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
-}
-
-// 貼り付けた時点で保存する（欄から外れるのを待たない）。次からは入力しなくてよいことを表示する
-const showTokenState = () => {
-  el("ghTokenState").textContent = ghSettings.token ? `トークン：保存済み（…${ghSettings.token.slice(-4)}）。直接 GitHub に送ります` : "トークン：なし（Worker を通して保存します）";
-  el("r2Note").textContent = ghSettings.r2Upload ? "合言葉：このブラウザに保存済み（次から入力不要）" : "合言葉：未入力（保存するには1回入れてください）";
-};
-el("ghToken").addEventListener("input", () => { saveGhSettings(); showTokenState(); });
-el("r2Upload").addEventListener("input", showTokenState);
-showTokenState();
-
-el("ghTest").addEventListener("click", async () => {
-  saveGhSettings();
-  el("ghNote").textContent = "確認中…";
+// 前に GitHub へ保存したデータを Cloudflare へ移す（1回だけ押せばよい）
+el("migrate").addEventListener("click", async () => {
+  if (!(await askKey())) return;
   try {
-    const info = await github.testConnection(ghSettings);
-    el("ghNote").textContent = `接続できました（${info.private ? "非公開" : "公開"}リポジトリ）。`;
+    const n = await r2.migrateFromGitHub(ghSettings, (k, total) => (el("ghNote").textContent = `移しています… ${k} / ${total}`));
+    el("ghNote").textContent = `GitHub の古いデータを ${n} 件、Cloudflare に移しました。`;
+    showGitHubList();
   } catch (err) {
-    el("ghNote").textContent = `接続できません：${err.message}`;
+    el("ghNote").textContent = `移せませんでした：${err.message}`;
   }
 });
 
-// 解析結果・選手データ（と動画）を送る。失敗してもブラウザ内の保存はそのまま
-async function uploadToGitHub(session) {
-  // 合言葉がまだなら、その場で聞く（入れた合言葉はこのブラウザに残し、次からは聞かない）
-  if (!github.canSave(ghSettings)) {
-    const key = (prompt("合言葉を入れると、GitHub と R2 にも保存します（このブラウザでは次から入力不要）") || "").trim();
-    if (key) { el("r2Upload").value = key; saveGhSettings(); showTokenState(); }
+// 合言葉がまだなら、その場で聞く（入れた合言葉はこのブラウザに残し、次からは聞かない）。戻り値：保存できるか
+async function askKey() {
+  if (!r2.canSave(ghSettings)) {
+    const key = (prompt("合言葉を入れると、Cloudflare に保存します（このブラウザでは次から入力不要）") || "").trim();
+    if (key) { el("r2Upload").value = key; saveGhSettings(); showKeyState(); }
   }
-  if (!github.canSave(ghSettings)) { el("ghNote").textContent = "合言葉が未入力のため、このブラウザにだけ保存しました。"; return; }
-  el("ghNote").textContent = "GitHubに保存中…";
+  return r2.canSave(ghSettings);
+}
+
+// 解析結果・選手データ（と動画）を Cloudflare に送る。失敗してもブラウザ内の保存はそのまま
+async function uploadToGitHub(session) {
+  if (!(await askKey())) { el("ghNote").textContent = "合言葉が未入力のため、このブラウザにだけ保存しました。"; return; }
+  el("ghNote").textContent = "Cloudflare に保存中…";
   try {
     if (el("ghVideo").checked) await uploadVideos(session);
-    const url = await github.uploadSession(ghSettings, session);
-    await github.uploadAthletes(ghSettings, athletes.buildBackup(store));
-    el("ghNote").innerHTML = "";
-    el("ghNote").append("GitHubに保存しました：", Object.assign(document.createElement("a"), { href: url, target: "_blank", textContent: github.sessionPath(session) }));
+    await r2.uploadSession(ghSettings, session);
+    await r2.uploadAthletes(ghSettings, athletes.buildBackup(store));
+    el("ghNote").textContent = `Cloudflare に保存しました（${github.sessionPath(session)}）。選手比較・ほかの端末でも見られます。`;
   } catch (err) {
-    el("ghNote").textContent = `GitHubに保存できませんでした（ブラウザ内には保存済み）：${err.message}`;
+    el("ghNote").textContent = `Cloudflare に保存できませんでした（ブラウザ内には保存済み）：${err.message}`;
     // 合言葉が違うときは消して、次の保存でもう一度聞く
-    if (/401/.test(err.message)) { el("r2Upload").value = ""; saveGhSettings(); showTokenState(); }
+    if (/401/.test(err.message)) { el("r2Upload").value = ""; saveGhSettings(); showKeyState(); }
   }
 }
 
-// 動画を小さくして R2（なければ GitHub）に送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
+// 動画を小さくして Cloudflare に送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
 async function uploadVideos(session) {
   for (const [view, d] of Object.entries(views)) {
-    if (!d?.file || d.githubVideo || d.r2Video || !d.width) continue;
+    if (!d?.file || d.r2Video || !d.width) continue;
     el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています…`;
     const blob = await compressVideo(d.file, { width: d.width, height: d.height, duration: (d.pose?.length ?? 0) / d.fps }, d.fps,
       (r) => (el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています… ${Math.round(r * 100)}%`));
     if (!blob) { el("ghNote").textContent = `${VIEW_LABELS[view]}の動画は、このブラウザでは小さくできないため送りません（Chrome か Edge を使ってください）`; continue; }
-    // 動画の保存先：R2 の Worker が設定されていれば R2、なければ GitHub
-    const place = r2.useR2(ghSettings) ? "R2" : "GitHub";
-    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）を${place}に送っています…`;
-    if (place === "R2") session.views[view].video.r2 = d.r2Video = await r2.uploadVideoR2(ghSettings, session, view, blob);
-    else session.views[view].video.github = d.githubVideo = await github.uploadVideo(ghSettings, session, view, blob);
+    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）を Cloudflare に送っています…`;
+    session.views[view].video.r2 = d.r2Video = await r2.uploadVideoR2(ghSettings, session, view, blob);
   }
   await sessions.saveSession(session, {}); // 送った動画のパスをブラウザ内の保存にも残す
 }
@@ -792,13 +785,13 @@ el("importSession").addEventListener("change", async (event) => {
 // GitHubの保存データの一覧を出す。行を押すと読み込んで表示する
 el("ghList").addEventListener("click", showGitHubList);
 
-// GitHubに保存したデータの一覧（トークン不要。スマホでも開いたときに自動で出す）
+// 保存したデータの一覧（Cloudflare と、前に GitHub へ保存したもの。スマホでも開いたときに自動で出す）
 async function showGitHubList() {
   const body = el("ghSessionList");
   body.innerHTML = "<tr><td>読み込み中…</td></tr>";
   try {
-    const list = await github.listSavedSessions(ghSettings);
-    body.innerHTML = list.length ? "" : "<tr><td>GitHubに保存されたデータはありません</td></tr>";
+    const list = await r2.listSessions(ghSettings);
+    body.innerHTML = list.length ? "" : "<tr><td>保存されたデータはありません</td></tr>";
     for (const item of list) {
       const row = document.createElement("tr");
       row.className = "clickable";
@@ -806,25 +799,25 @@ async function showGitHubList() {
       row.children[0].textContent = item.athlete;
       row.children[1].textContent = item.name;
       row.addEventListener("click", async () => {
-        el("sessionNote").textContent = "GitHubから読み込み中…";
-        const res = await fetch(github.rawUrl(ghSettings, item.path));
-        if (!res.ok) return alert(`読み込めませんでした（${res.status}）`);
-        importSessionText(await res.text());
+        el("sessionNote").textContent = "読み込み中…";
+        const text = await r2.readText(ghSettings, item.path);
+        if (!text) return alert("読み込めませんでした");
+        importSessionText(text);
       });
       body.appendChild(row);
     }
   } catch (err) {
     body.innerHTML = "";
-    el("sessionNote").textContent = `GitHubの一覧を読めません：${err.message}`;
+    el("sessionNote").textContent = `保存したデータの一覧を読めません：${err.message}`;
   }
 }
 
-// GitHubに保存した選手データを読み、この端末にいない選手を追加する（ブラウザの保存が消えても戻せるように）
+// 保存した選手データを読み、この端末にいない選手を追加する（ブラウザの保存が消えても戻せるように）
 //   選手データのファイルがなければ、保存した解析結果に入っている選手（名前・身長・体重・パドル）から作る
 async function loadGitHubAthletes() {
   try {
-    const res = await fetch(github.rawUrl(ghSettings, github.ATHLETES_PATH), { cache: "no-store" });
-    const remote = res.ok ? athletes.parseBackup(await res.text()) : await athletesFromSessions();
+    const text = await r2.readText(ghSettings, r2.ATHLETES_PATH);
+    const remote = text ? athletes.parseBackup(text) : await athletesFromSessions();
     const merged = athletes.mergeAthletes(store, remote);
     if (merged !== store) saveAthletes(merged);
   } catch { /* 読めなくてもこの端末の選手データで続ける */ }
@@ -832,13 +825,13 @@ async function loadGitHubAthletes() {
 
 // 選手ごとに最新の解析結果を1つ読み、選手データを取り出す
 async function athletesFromSessions() {
-  const list = await github.listSavedSessions(ghSettings); // 新しい順
+  const list = await r2.listSessions(ghSettings); // 新しい順
   const latest = list.filter((item, k) => list.findIndex((x) => x.athlete === item.athlete) === k); // 選手ごとに最新の1つ
   const found = [];
   for (const item of latest) {
-    const res = await fetch(github.rawUrl(ghSettings, item.path));
-    if (!res.ok) continue;
-    const s = JSON.parse(await res.text());
+    const text = await r2.readText(ghSettings, item.path);
+    if (!text) continue;
+    const s = JSON.parse(text);
     if (s.athleteName) found.push({ id: s.athleteId ?? `a_${s.athleteName}`, name: s.athleteName, values: s.athleteValues ?? {} });
   }
   return { current: found[0]?.id ?? null, list: found };

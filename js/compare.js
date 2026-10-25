@@ -1,4 +1,4 @@
-// 選手を並べて比べる：保存したデータ（GitHub）の動画に骨格の点を重ね、ストロークの同じ位置でそろえて並べる
+// 選手を並べて比べる：保存したデータ（Cloudflare）の動画に骨格の点を重ね、ストロークの同じ位置でそろえて並べる
 //
 // そろえ方：
 //   各動画から、漕ぐ側（右漕ぎ・左漕ぎ）の代表のストローク（長さが中央値に近いもの）を1本選び、その1本を繰り返し再生する
@@ -6,8 +6,7 @@
 //   → 同じ瞬間には、全員がストロークの同じ位置（キャッチからの何%か）にいる
 // 並べる数：PCは4人（上下左右の4分割）、スマホ（画面の幅が狭いとき）は2人（上下の2分割。CSS で3・4人目を隠す）
 
-import * as github from "./github.js";
-import { fetchVideo } from "./r2.js";
+import { fetchVideo, listSessions, readText } from "./r2.js";
 import { parseSessionFile } from "./sessions.js";
 import { representative } from "./assist.js";
 import { drawSkeleton } from "./overlay.js";
@@ -17,19 +16,20 @@ const CELLS = 4;
 const el = (id) => document.getElementById(id);
 
 let settings = null;
-let list = [];          // GitHub に保存したデータ [{ path, athlete, name }]
+let list = [];          // 保存したデータ [{ path, athlete, name, source }]
 const cells = [];       // 並べる枠 { box, select, video, canvas, label, data, stroke }
 const clock = { playing: false, start: 0, phase: 0, period: 1.2 }; // 共通の時計（phase＝0〜1）
 
-// 1つの枠のデータを読む：GitHub の解析結果 → 選んだ方向の骨格・ストローク → 動画
+// 1つの枠のデータを読む：保存した解析結果 → 選んだ方向の骨格・ストローク → 動画
 async function load(cell, path) {
   cell.data = null;
   cell.label.textContent = path ? "読み込み中…" : "";
   cell.video.removeAttribute("src");
   if (!path) return update();
   try {
-    const res = await fetch(github.rawUrl(settings, path));
-    const s = parseSessionFile(await res.text());
+    const text = await readText(settings, path); // Cloudflare → なければ前に GitHub へ保存したもの
+    if (!text) throw new Error("データを読めません");
+    const s = parseSessionFile(text);
     const view = el("compareView").value;
     const r = s.views[view];
     if (!r?.pose || !(r.video?.github || r.video?.r2)) throw new Error(`${VIEWS[view]}の動画か骨格が保存されていません`);
@@ -107,7 +107,7 @@ function setPlaying(on) {
   }
 }
 
-// 一覧を作り直す（GitHub の保存データ）
+// 一覧を作り直す（保存したデータ）
 function fillSelects() {
   for (const cell of cells) {
     const current = cell.select.value;
@@ -135,7 +135,7 @@ export async function setupCompare(ghSettings) {
   el("comparePlay").addEventListener("click", () => setPlaying(!clock.playing));
   el("comparePhase").addEventListener("input", (e) => { setPlaying(false); clock.phase = Number(e.target.value) / 100; seekAll(); });
   try {
-    list = await github.listSavedSessions(settings);
+    list = await listSessions(settings);
   } catch {
     list = [];
   }

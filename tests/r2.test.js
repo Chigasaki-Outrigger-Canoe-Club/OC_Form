@@ -21,7 +21,7 @@ test("R2：合言葉の確認・保存・読み込み（日本語の選手名も
   const { store, fetchFn } = setup();
   const settings = { r2Url: "https://w.example/", r2Upload: "up", r2View: "view" };
   assert.ok(useR2(settings) && !useR2({ r2Url: "" }));
-  assert.deepEqual(await checkR2(settings, fetchFn), { upload: true, view: true, github: false });
+  assert.deepEqual(await checkR2(settings, fetchFn), { upload: true, view: true });
   const session = { id: "abc", athleteName: "れお", date: "2026-10-25" };
   const path = await uploadVideoR2(settings, session, "right", new Blob(["movie"]), fetchFn);
   assert.equal(path, "data/れお/2026-10-25_abc_right.mp4");
@@ -33,29 +33,6 @@ test("R2：合言葉の確認・保存・読み込み（日本語の選手名も
   await assert.rejects(uploadVideoR2({ ...settings, r2Upload: "x" }, session, "left", new Blob(["m"]), fetchFn), /401/);
 });
 
-test("GitHub への保存は Worker 経由（トークンは Worker、サイトは保存用の合言葉だけ）", async () => {
-  const calls = [];
-  // GitHub API の代わり：既存ファイルなし → PUT を受けて URL を返す
-  const githubFetch = async (url, init = {}) => {
-    calls.push({ url, method: init.method ?? "GET", auth: init.headers?.Authorization, body: init.body && JSON.parse(init.body) });
-    if (!init.method) return new Response("{}", { status: 404 });
-    return new Response(JSON.stringify({ content: { html_url: "https://github.com/x" } }));
-  };
-  const env = { UPLOAD_KEY: "up", GITHUB_TOKEN: "secret", fetch: githubFetch, VIDEOS: {} };
-  const fetchFn = (url, init) => worker.fetch(new Request(url, init), env);
-  const { uploadAthletes, canSave } = await import("../js/github.js");
-  const settings = { token: "", r2Url: "https://w.example", r2Upload: "up" };
-  assert.ok(canSave(settings) && !canSave({ ...settings, r2Upload: "" }));
-  assert.equal(await uploadAthletes(settings, { list: [] }, fetchFn), "https://github.com/x");
-  const put = calls.find((c) => c.method === "PUT");
-  assert.equal(put.auth, "Bearer secret");
-  assert.equal(put.body.branch, "data");
-  assert.equal(Buffer.from(put.body.content, "base64").toString(), JSON.stringify({ list: [] }, null, 1));
-  // data/ の外・合言葉違いは保存しない
-  assert.equal((await fetchFn("https://w.example/github/README.md", { method: "PUT", headers: { "X-Upload-Key": "up" }, body: "x" })).status, 403);
-  await assert.rejects(uploadAthletes({ ...settings, r2Upload: "x" }, { list: [] }, fetchFn), /401/);
-});
-
 test("保存用の合言葉だけで動画も再生できる（合言葉は1つでよい）", async () => {
   const store = new Map();
   const env = { UPLOAD_KEY: "up", VIEW_KEY: "view", VIDEOS: {
@@ -65,4 +42,33 @@ test("保存用の合言葉だけで動画も再生できる（合言葉は1つ�
   const settings = { r2Url: "https://w.example", r2Upload: "up" };
   const path = await uploadVideoR2(settings, { id: "a", athleteName: "x", date: "d" }, "left", new Blob(["v"]), fetchFn);
   assert.equal(await (await fetchVideo(settings, { r2: path }, fetchFn)).text(), "v");
+});
+
+test("解析結果・選手データも Cloudflare に保存し、一覧と読み込みは Cloudflare → GitHub の順", async () => {
+  const store = new Map();
+  const env = { UPLOAD_KEY: "up", VIDEOS: {
+    put: async (k, body) => store.set(k, await new Response(body).arrayBuffer()),
+    get: async (k) => (store.has(k) ? { body: store.get(k), httpMetadata: { contentType: "application/json" } } : null),
+    list: async ({ prefix }) => ({ objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, size: 1 })), truncated: false }) } };
+  // GitHub（古いデータ）の代わり：一覧に1件、中身も返す
+  const old = { id: "o", athleteName: "Gai", date: "2026-10-21", views: { left: { video: { github: "data/Gai/2026-10-21_o_left.mp4" } } } };
+  const fetchFn = async (url, init) => {
+    if (url.includes("api.github.com")) return new Response(JSON.stringify({ tree: [
+      { type: "blob", path: "data/Gai/2026-10-21_o.json" }, { type: "blob", path: "data/Gai/2026-10-21_o_left.mp4" }] }));
+    if (url.includes("raw.githubusercontent.com")) return new Response(url.endsWith(".json") ? JSON.stringify(old) : "video");
+    return worker.fetch(new Request(url, init), env);
+  };
+  const { uploadSession, uploadAthletes, listSessions, readText, migrateFromGitHub, ATHLETES_PATH } = await import("../js/r2.js");
+  const settings = { owner: "o", repo: "r", branch: "data", r2Url: "https://w.example", r2Upload: "up" };
+  const session = { id: "n", athleteName: "Reo", athleteId: "a1", date: "2026-10-24", memo: "", views: {} };
+  await uploadSession(settings, session, fetchFn);
+  await uploadAthletes(settings, { list: [] }, fetchFn);
+  assert.ok(store.has("data/Reo/2026-10-24_n.json") && store.has(ATHLETES_PATH));
+  const list = await listSessions(settings, fetchFn);
+  assert.deepEqual(list.map((x) => [x.athlete, x.source]), [["Reo", "r2"], ["Gai", "github"]]); // 選手データ（athletes.json）は一覧に出さない
+  assert.equal(JSON.parse(await readText(settings, "data/Reo/2026-10-24_n.json", fetchFn)).athleteName, "Reo");
+  // GitHub の古いデータを移す：JSON には動画の場所（r2）を書き足す。2回目は移すものがない
+  assert.equal(await migrateFromGitHub(settings, () => {}, fetchFn), 2);
+  assert.equal(JSON.parse(new TextDecoder().decode(store.get("data/Gai/2026-10-21_o.json"))).views.left.video.r2, "data/Gai/2026-10-21_o_left.mp4");
+  assert.equal(await migrateFromGitHub(settings, () => {}, fetchFn), 0);
 });

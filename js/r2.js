@@ -42,8 +42,10 @@ const toItem = (path, source) => { const [, athlete, file] = path.split("/"); re
 export async function listSessions(settings, fetchFn = fetch) {
   const items = [];
   if (useR2(settings)) {
-    const res = await fetchFn(`${base(settings)}/list?prefix=data/`, { headers: keyHeaders(settings) });
-    if (res.ok) items.push(...(await res.json()).map((o) => o.key).filter((k) => SESSION_PATH.test(k)).map((k) => toItem(k, "r2")));
+    try {
+      const res = await fetchFn(`${base(settings)}/list?prefix=data/`, { headers: keyHeaders(settings) });
+      if (res.ok) items.push(...(await res.json()).map((o) => o.key).filter((k) => SESSION_PATH.test(k)).map((k) => toItem(k, "r2")));
+    } catch { /* Cloudflare に届かなくても、GitHub の古いデータは並べる */ }
   }
   const old = await github.listSavedSessions(settings, fetchFn).catch(() => []);
   items.push(...old.filter((o) => !items.some((x) => x.path === o.path)).map((o) => ({ ...o, source: "github" })));

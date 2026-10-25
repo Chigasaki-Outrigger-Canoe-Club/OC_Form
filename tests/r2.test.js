@@ -72,3 +72,13 @@ test("解析結果・選手データも Cloudflare に保存し、一覧と読�
   assert.equal(JSON.parse(new TextDecoder().decode(store.get("data/Gai/2026-10-21_o.json"))).views.left.video.r2, "data/Gai/2026-10-21_o_left.mp4");
   assert.equal(await migrateFromGitHub(settings, () => {}, fetchFn), 0);
 });
+
+test("Cloudflare に届かなくても、GitHub の古いデータの一覧は出す", async () => {
+  const { listSessions } = await import("../js/r2.js");
+  const fetchFn = async (url) => {
+    if (url.includes("api.github.com")) return new Response(JSON.stringify({ tree: [{ type: "blob", path: "data/GAI/2026-10-24_a.json" }] }));
+    throw new TypeError("Failed to fetch");
+  };
+  const list = await listSessions({ owner: "o", repo: "r", branch: "data", r2Url: "https://w.example" }, fetchFn);
+  assert.deepEqual(list.map((x) => x.athlete), ["GAI"]);
+});

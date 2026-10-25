@@ -30,16 +30,17 @@ async function load(cell, path) {
     const text = await readText(settings, path); // Cloudflare → なければ前に GitHub へ保存したもの
     if (!text) throw new Error("データを読めません");
     const s = parseSessionFile(text);
-    const view = el("compareView").value;
+    // 選んだ方向がなければ、動画と骨格がある方向を使う（並べる人で撮った方向が違うことがあるため）
+    const usable = (v) => s.views[v]?.pose && (s.views[v].video?.github || s.views[v].video?.r2);
+    const view = usable(el("compareView").value) ? el("compareView").value : Object.keys(VIEWS).find(usable);
+    if (!view) throw new Error("動画か骨格が保存されていません");
     const r = s.views[view];
-    if (!r?.pose || !(r.video?.github || r.video?.r2)) throw new Error(`${VIEWS[view]}の動画か骨格が保存されていません`);
     const file = await fetchVideo(settings, r.video); // R2 → GitHub の順に探す
     if (!file) throw new Error("動画を読めません（R2 の場合は再生用の合言葉を確認してください）");
     cell.video.src = URL.createObjectURL(file);
     cell.canvas.width = r.video.width ?? 1280;  // 骨格の点は元の動画のピクセル座標
     cell.canvas.height = r.video.height ?? 720;
-    cell.data = { pose: r.pose, strokes: r.strokes, fps: r.video.fps };
-    cell.label.textContent = `${s.athleteName ?? ""} ${s.date ?? ""} ${s.memo ?? ""}`;
+    cell.data = { pose: r.pose, strokes: r.strokes, fps: r.video.fps, title: `${s.athleteName ?? ""} ${s.date ?? ""} ${VIEWS[view]}から ${s.memo ?? ""}` };
   } catch (err) {
     cell.label.textContent = `読み込めません：${err.message}`;
   }
@@ -51,9 +52,14 @@ function update() {
   const side = document.querySelector("input[name=compareSide]:checked").value;
   for (const cell of cells) {
     const d = cell.data;
-    const n = d ? representative(d.strokes, side) : null;
+    if (!d) { cell.stroke = null; continue; }
+    // 選んだ漕ぐ側がなければ、反対側の代表ストロークを使う（その旨を名前の横に出す）
+    const other = side === "right" ? "left" : "right";
+    const own = representative(d.strokes, side);
+    const n = own ?? representative(d.strokes, other);
     cell.stroke = n == null ? null : { start: d.strokes[n].frame / d.fps, length: (d.strokes[n + 1].frame - d.strokes[n].frame) / d.fps };
-    if (d && n == null) cell.label.textContent += `（${side === "right" ? "右" : "左"}漕ぎがありません）`;
+    const note = n == null ? "（ストロークがありません）" : own == null ? `（${other === "right" ? "右" : "左"}漕ぎ）` : "";
+    cell.label.textContent = d.title + note;
   }
   const lengths = cells.map((c) => c.stroke?.length).filter(Boolean);
   const speed = Number(el("compareSpeed").value);

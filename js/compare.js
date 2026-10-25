@@ -7,6 +7,7 @@
 // 並べる数：PCは4人（上下左右の4分割）、スマホ（画面の幅が狭いとき）は2人（上下の2分割。CSS で3・4人目を隠す）
 
 import * as github from "./github.js";
+import { fetchVideo } from "./r2.js";
 import { parseSessionFile } from "./sessions.js";
 import { representative } from "./assist.js";
 import { drawSkeleton } from "./overlay.js";
@@ -31,9 +32,10 @@ async function load(cell, path) {
     const s = parseSessionFile(await res.text());
     const view = el("compareView").value;
     const r = s.views[view];
-    if (!r?.pose || !r.video?.github) throw new Error(`${VIEWS[view]}の動画か骨格が保存されていません`);
-    const video = await fetch(github.rawUrl(settings, r.video.github));
-    cell.video.src = URL.createObjectURL(new Blob([await video.blob()], { type: "video/mp4" }));
+    if (!r?.pose || !(r.video?.github || r.video?.r2)) throw new Error(`${VIEWS[view]}の動画か骨格が保存されていません`);
+    const file = await fetchVideo(settings, r.video); // R2 → GitHub の順に探す
+    if (!file) throw new Error("動画を読めません（R2 の場合は再生用の合言葉を確認してください）");
+    cell.video.src = URL.createObjectURL(file);
     cell.canvas.width = r.video.width ?? 1280;  // 骨格の点は元の動画のピクセル座標
     cell.canvas.height = r.video.height ?? 720;
     cell.data = { pose: r.pose, strokes: r.strokes, fps: r.video.fps };

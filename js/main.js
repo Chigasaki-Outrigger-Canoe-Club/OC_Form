@@ -25,6 +25,7 @@ import { form2d } from "./form2d.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
 import * as github from "./github.js";
+import * as r2 from "./r2.js";
 
 const el = (id) => document.getElementById(id);
 const video = el("video");
@@ -584,8 +585,26 @@ el("ghVideo").addEventListener("change", () => saveGhSettings());
 el("ghToken").value = ghSettings.token;
 el("ghRepo").textContent = `${ghSettings.owner}/${ghSettings.repo}（${ghSettings.branch} ブランチ）`;
 
+// R2（動画の保存先）の設定
+const R2_FIELDS = { r2Url: "r2Url", r2Upload: "r2Upload", r2View: "r2View" };
+Object.entries(R2_FIELDS).forEach(([key, id]) => {
+  el(id).value = ghSettings[key] ?? "";
+  el(id).addEventListener("input", () => saveGhSettings());
+});
+el("r2Test").addEventListener("click", async () => {
+  saveGhSettings();
+  el("r2Note").textContent = "確認中…";
+  try {
+    const ok = await r2.checkR2(ghSettings);
+    el("r2Note").textContent = `Worker に届きました。保存用の合言葉：${ok.upload ? "OK" : "違います"}、再生用：${ok.view ? "OK" : "違います"}`;
+  } catch (err) {
+    el("r2Note").textContent = `確認できません：${err.message}`;
+  }
+});
+
 function saveGhSettings() {
-  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked, video: el("ghVideo").checked };
+  ghSettings = { ...ghSettings, token: el("ghToken").value.trim(), raw: el("rawExport").checked, video: el("ghVideo").checked,
+    ...Object.fromEntries(Object.entries(R2_FIELDS).map(([key, id]) => [key, el(id).value.trim()])) };
   try { localStorage.setItem(GITHUB_KEY, JSON.stringify(ghSettings)); } catch { /* 保存できない環境 */ }
 }
 
@@ -625,14 +644,16 @@ async function uploadToGitHub(session) {
 // 動画を小さくしてGitHubに送る（まだ送っていない方向だけ）。送ったパスはデータにも書く
 async function uploadVideos(session) {
   for (const [view, d] of Object.entries(views)) {
-    if (!d?.file || d.githubVideo || !d.width) continue;
+    if (!d?.file || d.githubVideo || d.r2Video || !d.width) continue;
     el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています…`;
     const blob = await compressVideo(d.file, { width: d.width, height: d.height, duration: (d.pose?.length ?? 0) / d.fps }, d.fps,
       (r) => (el("ghNote").textContent = `${VIEW_LABELS[view]}の動画を小さくしています… ${Math.round(r * 100)}%`));
     if (!blob) { el("ghNote").textContent = `${VIEW_LABELS[view]}の動画は、このブラウザでは小さくできないため送りません`; continue; }
-    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）をGitHubに送っています…`;
-    d.githubVideo = await github.uploadVideo(ghSettings, session, view, blob);
-    session.views[view].video.github = d.githubVideo;
+    // 動画の保存先：R2 の Worker が設定されていれば R2、なければ GitHub
+    const place = r2.useR2(ghSettings) ? "R2" : "GitHub";
+    el("ghNote").textContent = `${VIEW_LABELS[view]}の動画（${(blob.size / 1e6).toFixed(1)}MB）を${place}に送っています…`;
+    if (place === "R2") session.views[view].video.r2 = d.r2Video = await r2.uploadVideoR2(ghSettings, session, view, blob);
+    else session.views[view].video.github = d.githubVideo = await github.uploadVideo(ghSettings, session, view, blob);
   }
   await sessions.saveSession(session, {}); // 送った動画のパスをブラウザ内の保存にも残す
 }
@@ -661,25 +682,13 @@ function startNewData() {
   dataChanged();
 }
 
-// GitHubに保存した小さい動画を読む（なければ null）。解析し直せるように、MP4 のファイルとして扱う
-async function githubVideo(meta) {
-  if (!meta?.github) return null;
-  try {
-    const res = await fetch(github.rawUrl(ghSettings, meta.github));
-    if (!res.ok) return null;
-    return new File([await res.blob()], meta.github.split("/").pop(), { type: "video/mp4" });
-  } catch {
-    return null;
-  }
-}
-
 async function openSession(id) {
   if (analyzing) return;
   const s = await sessions.getSession(id);
   clearViews();
   for (const [view, r] of Object.entries(s.views)) {
-    // 動画：このブラウザに保存したもの → なければ GitHub に保存した小さい動画
-    const blob = (await sessions.getVideo(id, view)) ?? (await githubVideo(r.video));
+    // 動画：このブラウザに保存したもの → なければ R2・GitHub に保存した小さい動画
+    const blob = (await sessions.getVideo(id, view)) ?? (await r2.fetchVideo(ghSettings, r.video));
     views[view] = {
       file: blob ?? null,
       url: blob ? URL.createObjectURL(blob) : null,
@@ -697,6 +706,7 @@ async function openSession(id) {
       width: r.video.width ?? null,
       height: r.video.height ?? null,
       githubVideo: r.video.github ?? null,
+      r2Video: r.video.r2 ?? null,
     };
     refreshDerived(views[view]);
   }

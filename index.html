@@ -95,6 +95,14 @@
           <button class="btn" id="ghTest">接続テスト</button>
         </div>
         <p id="ghTokenState" class="muted small"></p>
+        <p class="muted"><b>動画の保存先を Cloudflare R2 にする</b>（入れると動画は R2 に、解析結果は GitHub に保存します。R2 の動画は合言葉を知っている人だけが再生できます）</p>
+        <div class="row">
+          <input type="url" id="r2Url" class="btn wide" placeholder="Worker の URL（https://….workers.dev）" autocomplete="off">
+          <input type="password" id="r2Upload" class="btn" placeholder="保存用の合言葉" autocomplete="off">
+          <input type="password" id="r2View" class="btn" placeholder="再生用の合言葉" autocomplete="off">
+          <button class="btn" id="r2Test">R2の確認</button>
+        </div>
+        <p id="r2Note" class="muted"></p>
         <p id="ghNote" class="muted"></p>
         <p class="muted">トークンの作り方：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で OC_Form だけを選び、Permissions の Contents を「Read and write」にします。トークンはこのブラウザ内だけに保存されます。保存するPC（ブラウザ）ごとに1回だけ入れれば、以後は自動で送ります。別のブラウザ・シークレットウィンドウ・履歴を消したときは、もう一度入れます（スマホで見るだけならトークンは不要）。</p>
       </details>

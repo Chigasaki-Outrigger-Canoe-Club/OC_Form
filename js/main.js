@@ -727,36 +727,59 @@ async function openSession(id) {
   renderSessions();
 }
 
+// 過去データ：選んでいる選手のデータだけを並べる（このブラウザに保存したもの＋保存先にあるもの）
+//   保存先のデータは、フォルダ名（選手名）が選手の名前と同じものをその選手のデータとみなす（大文字・小文字は区別しない）
+//   同じデータ（同じID）がこのブラウザにもあれば1件として数える
+let cloudList = []; // 保存先（Cloudflare・GitHub の古いデータ）の一覧。showGitHubList で読み直す
+
 async function renderSessions() {
   const body = el("sessionList");
   body.innerHTML = "";
   const a = athletes.currentAthlete(store);
-  if (!a) return;
-  let list = [];
+  if (!a) { el("sessionCount").textContent = ""; return; }
+  let local = [];
   try {
-    list = sessions.sortSessions(await sessions.listSessions(a.id));
+    local = sessions.sortSessions(await sessions.listSessions(a.id));
   } catch (err) {
     el("sessionNote").textContent = `保存データを読めません：${err.message}`;
   }
-  el("sessionCount").textContent = `（${list.length} 件）`;
-  for (const s of list) {
+  const remote = cloudList.filter((item) => github.sameAthlete(item.athlete, a.name) && !local.some((s) => item.name.endsWith(`_${s.id}`)));
+  el("sessionCount").textContent = `（${local.length + remote.length} 件）`;
+  const rows = [
+    ...local.map((s) => ({ date: s.date, memo: s.memo, open: () => openSession(s.id), remove: s })),
+    ...remote.map((item) => ({ date: item.name.split("_")[0], memo: "（保存先から読み込む）", open: () => loadRemote(item) })),
+  ].sort((x, y) => y.date.localeCompare(x.date));
+  for (const r of rows) {
     const row = document.createElement("tr");
-    row.className = s.id === sessionId ? "clickable current" : "clickable";
-    row.innerHTML = '<td></td><td></td><td><button class="btn small">削除</button></td>';
-    row.children[0].textContent = s.date;
-    row.children[1].textContent = s.memo; // メモは文字としてそのまま表示
-    row.addEventListener("click", () => openSession(s.id));
-    row.querySelector("button").addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (!confirm(`${s.date} ${s.memo} を削除しますか？（元に戻せません）`)) return;
-      await sessions.deleteSession(s.id);
-      if (sessionId === s.id) { sessionId = null; showSessionLabel(); }
-      renderSessions();
-    });
+    row.className = r.remove?.id === sessionId ? "clickable current" : "clickable";
+    row.innerHTML = "<td></td><td></td><td></td>";
+    row.children[0].textContent = r.date;
+    row.children[1].textContent = r.memo; // メモは文字としてそのまま表示
+    row.addEventListener("click", r.open);
+    if (r.remove) {
+      const button = Object.assign(document.createElement("button"), { className: "btn small", textContent: "削除" });
+      button.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm(`${r.date} ${r.memo} をこのブラウザから削除しますか？（保存先のデータは残ります）`)) return;
+        await sessions.deleteSession(r.remove.id);
+        if (sessionId === r.remove.id) { sessionId = null; showSessionLabel(); }
+        renderSessions();
+      });
+      row.children[2].append(button);
+    }
     body.appendChild(row);
   }
+  if (!rows.length) body.innerHTML = '<tr><td colspan="3" class="muted">この選手のデータはまだありません</td></tr>';
   const usage = await sessions.storageUsage();
   el("storageUsage").textContent = usage ? `使用量 ${usage.usedMB} MB` : "";
+}
+
+// 保存先のデータを読み込んで表示する
+async function loadRemote(item) {
+  el("sessionNote").textContent = "読み込み中…";
+  const text = await r2.readText(ghSettings, item.path);
+  if (!text) return alert("読み込めませんでした");
+  importSessionText(text);
 }
 
 // ---- 書き出し・読み込み ----
@@ -786,34 +809,18 @@ el("importSession").addEventListener("change", async (event) => {
   if (file) importSessionText(await file.text());
 });
 
-// GitHubの保存データの一覧を出す。行を押すと読み込んで表示する
+// 保存先の一覧を読み直して、過去データの表に反映する
 el("ghList").addEventListener("click", showGitHubList);
 
-// 保存したデータの一覧（Cloudflare と、前に GitHub へ保存したもの。スマホでも開いたときに自動で出す）
 async function showGitHubList() {
-  const body = el("ghSessionList");
-  body.innerHTML = "<tr><td>読み込み中…</td></tr>";
+  el("sessionNote").textContent = "保存先の一覧を読み込み中…";
   try {
-    const list = await r2.listSessions(ghSettings);
-    body.innerHTML = list.length ? "" : "<tr><td>保存されたデータはありません</td></tr>";
-    for (const item of list) {
-      const row = document.createElement("tr");
-      row.className = "clickable";
-      row.innerHTML = "<td></td><td></td>";
-      row.children[0].textContent = item.athlete;
-      row.children[1].textContent = item.name;
-      row.addEventListener("click", async () => {
-        el("sessionNote").textContent = "読み込み中…";
-        const text = await r2.readText(ghSettings, item.path);
-        if (!text) return alert("読み込めませんでした");
-        importSessionText(text);
-      });
-      body.appendChild(row);
-    }
+    cloudList = await r2.listSessions(ghSettings);
+    el("sessionNote").textContent = "";
   } catch (err) {
-    body.innerHTML = "";
-    el("sessionNote").textContent = `保存したデータの一覧を読めません：${err.message}`;
+    el("sessionNote").textContent = `保存先の一覧を読めません：${err.message}`;
   }
+  renderSessions();
 }
 
 // 保存した選手データを読み、この端末にいない選手を追加する（ブラウザの保存が消えても戻せるように）

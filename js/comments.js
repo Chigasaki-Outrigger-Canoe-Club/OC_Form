@@ -57,6 +57,12 @@ export function setupComments({ getSettings, getAthlete, askKey }) {
     }
   }
 
+  // 書き込み中は、名前・コメント・ボタンをグレーにして操作できないようにする
+  const setBusy = (on) => {
+    ["commentName", "commentText", "commentPost"].forEach((id) => (el(id).disabled = on));
+    el("commentPost").textContent = on ? "書き込み中…" : "書き込む";
+  };
+
   el("commentPost").addEventListener("click", async () => {
     const athlete = getAthlete();
     const text = el("commentText").value.trim();
@@ -64,7 +70,7 @@ export function setupComments({ getSettings, getAthlete, askKey }) {
     if (!(await askKey())) return;
     const name = el("commentName").value.trim();
     try { localStorage.setItem(NAME_KEY, name); } catch { /* 覚えられない環境 */ }
-    el("commentPost").disabled = true;
+    setBusy(true); // 反映されるまで押せないようにする（二重に書き込まないため）
     try {
       await postComment(getSettings(), athlete, name, text);
       el("commentText").value = "";
@@ -72,7 +78,7 @@ export function setupComments({ getSettings, getAthlete, askKey }) {
     } catch (err) {
       alert(err.message);
     } finally {
-      el("commentPost").disabled = false;
+      setBusy(false);
     }
   });
 

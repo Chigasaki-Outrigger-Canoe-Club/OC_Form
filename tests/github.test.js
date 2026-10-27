@@ -37,3 +37,11 @@ test("一覧：data/選手名/ファイル.json だけを新しい順に（ト�
     "https://raw.githubusercontent.com/chigasaki-outrigger-canoe-club/OC_Form/data/data/%E3%81%BE%E3%81%AA%E3%81%A8/a.json");
 });
 
+
+test("選手のデータかどうかはフォルダ名（選手名）で判断する", async () => {
+  const { sameAthlete } = await import("../js/github.js");
+  assert.ok(sameAthlete("Manato", "Manato"));
+  assert.ok(sameAthlete("GAI", "Gai"));            // 大文字・小文字は区別しない
+  assert.ok(sameAthlete("a_b", "a b"));            // 保存のときと同じく空白は _ に
+  assert.ok(!sameAthlete("Reo", "Reona"));
+});

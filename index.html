@@ -13,15 +13,6 @@
   </header>
 
   <main class="layout">
-    <!-- コメント（掲示板）：選んでいる選手のフォームへのコメント。名前・本文・日時で残る -->
-    <section class="panel">
-      <h2 id="commentTitle">コメント</h2>
-      <div id="commentList" class="comments"></div>
-      <input type="text" id="commentName" class="btn" placeholder="名前" maxlength="30">
-      <textarea id="commentText" class="btn comment-input" rows="3" placeholder="コメント" maxlength="2000"></textarea>
-      <button class="btn primary" id="commentPost">書き込む</button>
-    </section>
-
     <!-- 1. 選手情報（動画を読み込む前に選ぶ） -->
     <section class="panel">
       <div class="row">
@@ -54,18 +45,16 @@
           <tbody id="sessionList"></tbody>
         </table>
       </div>
-      <p class="muted">このブラウザに保存したデータです。行を押すと表示します。<span id="sessionNote"></span></p>
+      <p class="muted">選んでいる選手のデータです（このブラウザと保存先）。行を押すと表示します。<span id="sessionNote"></span></p>
       <div class="row">
         <label class="btn">
           ファイルから読み込む
           <input type="file" id="importSession" accept=".json,application/json" hidden>
         </label>
-        <button class="btn" id="ghList">一覧を更新</button>
+        <button class="btn" id="ghList">保存先を読み直す</button>
         <button class="btn" id="exportSession">表示中のデータを書き出す（JSON）</button>
         <button class="btn" id="exportCSV">この方向をCSVで書き出す</button>
       </div>
-      <p class="muted">保存したデータ（どの端末からでも見られます）：</p>
-      <div class="scroll"><table class="table"><tbody id="ghSessionList"></tbody></table></div>
       <p class="muted">書き出した JSON を読み込むと、このブラウザの一覧に追加されます。<span id="storageUsage"></span></p>
       </div>
     </section>
@@ -258,7 +247,14 @@
       </ul>
     </section>
 
-
+    <!-- コメント（掲示板）：選んでいる選手のフォームへのコメント。名前・本文・日時で残る -->
+    <section class="panel">
+      <h2 id="commentTitle">コメント</h2>
+      <div id="commentList" class="comments"></div>
+      <input type="text" id="commentName" class="btn" placeholder="名前" maxlength="30">
+      <textarea id="commentText" class="btn comment-input" rows="3" placeholder="コメント" maxlength="2000"></textarea>
+      <button class="btn primary" id="commentPost">書き込む</button>
+    </section>
   </main>
 
   <!-- 読み込みに失敗したとき（更新の直後に古いファイルが混ざったときなど）は、再読み込みを案内する -->

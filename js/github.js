@@ -21,7 +21,10 @@ export function loadSettings(storage) {
 }
 
 // ファイル名に使えない文字を置き換える
-const safeName = (text) => (text || "unknown").replace(/[\\/:*?"<>|\s]+/g, "_");
+export const safeName = (text) => (text || "unknown").replace(/[\\/:*?"<>|\s]+/g, "_");
+
+// 保存先のフォルダ名（data/選手名/）がその選手のものか。名前で判断する（大文字・小文字は区別しない）
+export const sameAthlete = (folder, name) => folder.toLowerCase() === safeName(name).toLowerCase();
 
 // 保存先のパス：data/選手名/練習日_セッションID.json、動画は …_方向.mp4
 export const sessionPath = (session) => `data/${safeName(session.athleteName)}/${safeName(session.date)}_${session.id}.json`;

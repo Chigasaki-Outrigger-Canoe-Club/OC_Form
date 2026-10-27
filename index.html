@@ -6,67 +6,41 @@
   <title>OC Form 解析</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kaushan+Script&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- ヘッダー：茅ヶ崎の海（烏帽子岩とアウトリガーカヌー）。絵は飾りなので読み上げない -->
+  <!-- ヘッダー：背景の海の写真（body の背景）の上に題名。写真は空と海を見せるため、ここは透明 -->
   <header class="hero">
-    <svg viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <defs>
-        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe0e6"/><stop offset="1" stop-color="#eef6f4"/></linearGradient>
-        <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#86bcc4"/><stop offset="1" stop-color="#1c6f80"/></linearGradient>
-      </defs>
-      <!-- 空と海（水平線は y=105） -->
-      <rect width="1200" height="105" fill="url(#sky)"/>
-      <rect y="105" width="1200" height="85" fill="url(#sea)"/>
-      <rect y="104" width="1200" height="1.5" fill="#ffffff" opacity="0.7"/>
-      <!-- 烏帽子岩と小さな岩（スマホでも切れないよう中央寄り） -->
-      <path d="M708 105 L724 60 Q730 44 737 58 L752 92 L770 105 Z" fill="#3f6a73" opacity="0.85"/>
-      <path d="M682 105 Q690 94 700 96 L708 105 Z M770 105 Q780 97 792 99 L802 105 Z" fill="#4d7780" opacity="0.8"/>
-      <!-- アウトリガーカヌー：船体・アマ（浮き）・つなぐ棒・漕ぎ手6人。沖に小さく（題名と重ならない高さ） -->
-      <g fill="#123f4c" opacity="0.85" transform="translate(500 116) scale(0.75)">
-        <path d="M0 0 Q80 6 172 0 L168 4 Q80 10 6 4 Z"/>
-        <path d="M42 -14 Q80 -12 118 -14 L118 -12 Q80 -10 42 -12 Z"/>
-        <rect x="56" y="-13" width="2" height="14"/><rect x="98" y="-13" width="2" height="14"/>
-        <circle cx="26" cy="-8" r="2.4"/><rect x="24.6" y="-6" width="2.8" height="6"/><circle cx="52" cy="-8" r="2.4"/><rect x="50.6" y="-6" width="2.8" height="6"/><circle cx="78" cy="-8" r="2.4"/><rect x="76.6" y="-6" width="2.8" height="6"/><circle cx="104" cy="-8" r="2.4"/><rect x="102.6" y="-6" width="2.8" height="6"/><circle cx="130" cy="-8" r="2.4"/><rect x="128.6" y="-6" width="2.8" height="6"/><circle cx="156" cy="-8" r="2.4"/><rect x="154.6" y="-6" width="2.8" height="6"/>
-        <g stroke="#123f4c" stroke-width="1.4"><path d="M30 -5 L38 8"/><path d="M56 -5 L64 8"/><path d="M82 -5 L90 8"/><path d="M108 -5 L116 8"/><path d="M134 -5 L142 8"/><path d="M160 -5 L168 8"/></g>
-      </g>
-      <!-- 波（奥から手前へ） -->
-      <path d="M0 150 Q75 140 150 150 T300 150 T450 150 T600 150 T750 150 T900 150 T1050 150 T1200 150 V190 H0 Z" fill="#2b8596" opacity="0.55"/>
-      <path d="M0 162 Q100 150 200 162 T400 162 T600 162 T800 162 T1000 162 T1200 162 V190 H0 Z" fill="#1c6f80" opacity="0.8"/>
-      <path d="M0 162 Q100 150 200 162 T400 162 T600 162 T800 162 T1000 162 T1200 162" fill="none" stroke="#e7dcc6" stroke-width="1.5" opacity="0.7"/>
-      <path d="M0 176 Q120 168 240 176 T480 176 T720 176 T960 176 T1200 176 V190 H0 Z" fill="#0f3d4c"/>
-    </svg>
     <div class="hero-text">
-      <h1>OC Form 解析</h1>
-      <p>茅ヶ崎アウトリガーカヌークラブ</p>
-      <a class="nav" href="compare.html">選手比較</a>
+      <h1><span class="script">OC Form</span> 解析</h1>
+      <p class="tagline">Better form / Higher performance</p>
     </div>
+    <a class="nav" href="compare.html"><i class="icon i-wave"></i>選手比較</a>
   </header>
 
   <main class="layout">
     <!-- 1. 選手情報（動画を読み込む前に選ぶ） -->
     <section class="panel">
       <div class="row">
-        <button class="tab active" data-pane="athletePane">選手</button>
-        <button class="tab" data-pane="historyPane">過去データ <span id="sessionCount"></span></button>
+        <button class="tab active" data-pane="athletePane"><i class="icon i-paddle"></i>選手</button>
+        <button class="tab" data-pane="historyPane"><i class="icon i-history"></i>過去データ <span id="sessionCount"></span></button>
       </div>
       <div id="athletePane">
       <div class="row">
         <select id="athleteSelect" class="btn"></select>
-        <button class="btn" id="addAthlete">＋追加</button>
-        <button class="btn" id="renameAthlete">名前変更</button>
-        <button class="btn" id="removeAthlete">削除</button>
+        <button class="btn" id="addAthlete"><i class="icon i-add"></i>追加</button>
+        <button class="btn" id="renameAthlete"><i class="icon i-rename"></i>名前変更</button>
+        <button class="btn" id="removeAthlete"><i class="icon i-delete"></i>削除</button>
       </div>
       <div class="fields">
-        <label>身長 <input type="number" id="height" min="100" max="230"> cm</label>
-        <label>体重 <input type="number" id="weight" min="30" max="200"> kg</label>
-        <label>パドル全長 <input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></label>
-        <label>ブレード長 <input type="number" id="bladeLength" min="20" max="70"> cm</label>
-        <label>ブレード幅 <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
+        <label><i class="icon i-height"></i><span>身長</span> <input type="number" id="height" min="100" max="230"> cm</label>
+        <label><i class="icon i-weight"></i><span>体重</span> <input type="number" id="weight" min="30" max="200"> kg</label>
+        <label><i class="icon i-paddle"></i><span>パドル全長</span> <input type="number" id="paddle" min="30" max="70" step="0.5"> inch <span id="paddleCm" class="muted"></span></label>
+        <label><i class="icon i-blade"></i><span>ブレード長</span> <input type="number" id="bladeLength" min="20" max="70"> cm</label>
+        <label><i class="icon i-bladewidth"></i><span>ブレード幅</span> <input type="number" id="bladeWidth" min="10" max="40"> cm</label>
       </div>
-      <p class="muted">入力は選択中の選手に自動で保存されます（このブラウザと Cloudflare）。パドル寸法が未入力なら標準値を使います。身長は cm の換算に使います。<span id="athleteNote"></span></p>
+      <p class="muted note"><i class="icon i-info"></i>入力は選択中の選手に自動で保存されます（このブラウザと Cloudflare）。パドル寸法が未入力なら標準値を使います。身長は cm の換算に使います。<span id="athleteNote"></span></p>
       </div>
 
       <!-- 過去データ（選手の欄でタブを切り替えて選ぶ） -->
@@ -94,14 +68,14 @@
 
     <!-- 2. 動画の読み込み・まとめて実行・動画と3Dの切り替え -->
     <section class="panel">
-      <h2>動画と3Dモデル</h2>
+      <h2><i class="icon i-video"></i>動画と3Dモデル</h2>
       <div class="row">
         <button class="tab" data-view="front">前</button>
         <button class="tab" data-view="left">左</button>
         <button class="tab" data-view="right">右</button>
         <button class="tab" data-view="back">後ろ</button>
-        <label class="btn">
-          動画を選択
+        <label class="btn primary">
+          <i class="icon i-play"></i>動画を選択
           <input type="file" id="fileInput" accept="video/*" hidden>
         </label>
         <span id="fileName" class="muted">未選択</span>

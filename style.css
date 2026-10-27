@@ -3,6 +3,7 @@
 :root {
   --bg: #f1f5f4;        /* 朝の霧のような白 */
   --panel: #ffffff;
+  --glass: rgba(246, 251, 251, 0.82); /* 写真の上の板 */
   --text: #19323b;
   --muted: #5f7880;
   --accent: #1c7c8c;    /* 海の青緑：ボタン・選択中 */
@@ -23,6 +24,7 @@
   :root {
     --bg: #0b1e25;      /* 夜の海 */
     --panel: #12303a;
+    --glass: rgba(11, 30, 37, 0.8);
     --text: #e3eef0;
     --muted: #93adb3;
     --accent: #5fc1cf;
@@ -49,18 +51,24 @@ body {
   line-height: 1.6;
 }
 
-/* ヘッダー：空と海の絵（烏帽子岩とカヌー）の上に題名 */
-.hero { position: relative; height: 190px; overflow: hidden; background: #1c6f80; color: #fff; } /* 空と海は中の絵（svg）で描く */
-.hero svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.hero-text { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; align-items: baseline; gap: 16px; padding: 0 20px; max-width: 1100px; margin: 0 auto; }
-.hero h1 { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: 0.04em; text-shadow: 0 1px 8px rgba(15, 61, 76, 0.45); }
-.hero p { margin: 0; font-size: 0.9rem; opacity: 0.92; text-shadow: 0 1px 6px rgba(15, 61, 76, 0.5); }
-.hero .nav { margin-left: auto; color: #fff; border: 1px solid rgba(255, 255, 255, 0.7); }
-.hero .nav:hover { background: rgba(255, 255, 255, 0.15); }
+/* ページの背景：海の写真（画面に固定、横幅いっぱい）。その下は淡い海の色
+   カヌー（写真の高さの45%あたり）が、最初の板（上から約330px）より上に見えるよう、広い画面では写真を上へずらす */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: url("img/sea.jpg") center min(0px, calc(330px - 25.3vw)) / 100% auto no-repeat, linear-gradient(#5aa9c0, #cfe8ec 70%, #eaf5f6);
+}
+@media (max-width: 600px) { body::before { background-image: url("img/sea-small.jpg"), linear-gradient(#5aa9c0, #cfe8ec 45%, #eaf5f6); } }
+
+/* ヘッダー：写真の空の上に題名（筆記体）と一言 */
+.hero { position: relative; max-width: 1100px; margin: 0 auto; padding: 36px 20px 210px; color: #fff; } /* 下の余白＝写真の水平線とカヌーを見せる分 */
+.hero h1 { margin: 0; font-size: 2.6rem; font-weight: 700; line-height: 1.1; text-shadow: 0 2px 12px rgba(15, 61, 76, 0.35); }
+.hero .script { font-family: "Kaushan Script", cursive; font-weight: 400; font-size: 1.25em; letter-spacing: 0.01em; }
+.hero .tagline { margin: 8px 0 0 4px; font-size: 0.8rem; letter-spacing: 0.2em; opacity: 0.95; text-shadow: 0 1px 6px rgba(15, 61, 76, 0.5); }
+.hero .nav { position: absolute; top: 40px; right: 20px; }
 @media (max-width: 600px) {
-  .hero { height: 150px; }
-  .hero h1 { font-size: 1.5rem; }
-  .hero p { display: none; }
+  .hero { padding: 24px 16px 90px; }
+  .hero h1 { font-size: 1.9rem; }
+  .hero .nav { top: 26px; right: 16px; }
 }
 
 /* 選手比較ページなどの細いヘッダー（画面を広く使うため、絵は出さない） */
@@ -68,8 +76,9 @@ body {
 @media (prefers-color-scheme: dark) { .header { background: #0f3d4c; } }
 .header h1 { margin: 0; font-size: 1.1rem; }
 .header h1 a { color: inherit; text-decoration: none; }
-/* ページ切り替え（解析 ⇔ 選手比較） */
-.nav { padding: 4px 12px; border-radius: 999px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 0.9rem; }
+/* ページ切り替え（解析 ⇔ 選手比較）：海色のボタン */
+.nav { display: inline-flex; align-items: center; padding: 8px 18px; border-radius: 999px; color: #fff; text-decoration: none; font-weight: 700; font-size: 0.95rem;
+  background: linear-gradient(135deg, #5cc6d3, #2a95ab); box-shadow: 0 4px 14px rgba(15, 61, 76, 0.25); }
 .header .nav { color: #fff; }
 .nav.active { background: rgba(255, 255, 255, 0.18); }
 
@@ -89,14 +98,19 @@ body {
   margin: 0 auto;
 }
 
+/* 写真の上に浮かぶ、すりガラスのような板 */
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+  padding: 24px 26px;
+  box-shadow: 0 10px 30px rgba(15, 61, 76, 0.12);
 }
+@media (max-width: 600px) { .panel { padding: 18px 16px; border-radius: 18px; } }
 
-.panel h2 { margin: 0 0 var(--gap); font-size: 1.1rem; font-weight: 700; color: var(--deep); }
+.panel h2 { margin: 0 0 var(--gap); font-size: 1.25rem; font-weight: 700; color: var(--deep); }
 
 .row {
   display: flex;
@@ -109,18 +123,20 @@ body {
 /* ボタン類は .btn と .tab の2種類だけ */
 .btn, .tab, input[type="number"] {
   font: inherit;
-  color: var(--text);
+  color: var(--deep);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
+  border-radius: 999px;
+  padding: 8px 18px;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 61, 76, 0.06);
 }
+input[type="number"] { border-radius: 14px; padding: 8px 14px; cursor: text; }
 
 .btn:hover, .tab:hover { border-color: var(--accent); }
 .btn:focus-visible, .tab:focus-visible, .nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab.active, .btn.primary { background: linear-gradient(135deg, #2aa3b8, #1c7c8c); border-color: transparent; color: #fff; font-weight: 700; }
 .tab.loaded::after { content: " ●"; }
 
 /* 動画と骨格キャンバスを同じ位置に重ねる */
@@ -166,8 +182,7 @@ body {
 .view3d { width: 100%; height: 520px; display: block; cursor: grab; touch-action: none; }
 @media (max-width: 600px) { .view3d { height: 420px; } }
 
-.btn.small { padding: 2px 6px; font-size: 0.85rem; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: bold; }
+.btn.small { padding: 3px 10px; font-size: 0.85rem; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 
 .link {
@@ -199,8 +214,7 @@ body {
 .sub summary { cursor: pointer; }
 
 /* 選手の入力欄：横に並べ、狭い画面では折り返す */
-.fields { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: var(--gap); }
-.fields input, #fps { width: 6.5em; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; }
+#fps { width: 6.5em; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; }
 
 .table tbody tr.clickable { cursor: pointer; }
 .table tbody tr.clickable:hover, .table tbody tr.current { background: var(--bg); }
@@ -249,3 +263,29 @@ body {
 .comment-head b { color: var(--accent); }
 .comment-text { white-space: pre-wrap; padding-left: 1.5em; overflow-wrap: anywhere; }
 .comment-input { display: block; width: 100%; margin: 6px 0; font: inherit; resize: vertical; }
+
+/* アイコン：白い型（img/icons/*.png）を文字の色で塗る。<i class="icon i-名前"></i> */
+.icon { display: inline-block; width: 1.25em; height: 1.25em; margin-right: 0.45em; vertical-align: -0.25em; flex: none;
+  background: currentColor; -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
+.i-add { --i: url("img/icons/add.png"); }
+.i-rename { --i: url("img/icons/rename.png"); }
+.i-delete { --i: url("img/icons/delete.png"); }
+.i-height { --i: url("img/icons/height.png"); }
+.i-weight { --i: url("img/icons/weight.png"); }
+.i-paddle { --i: url("img/icons/paddle.png"); }
+.i-blade { --i: url("img/icons/blade.png"); }
+.i-bladewidth { --i: url("img/icons/bladewidth.png"); }
+.i-info { --i: url("img/icons/info.png"); }
+.i-video { --i: url("img/icons/video.png"); }
+.i-play { --i: url("img/icons/play.png"); }
+.i-history { --i: url("img/icons/history.png"); }
+.i-wave { --i: url("img/icons/wave.png"); width: 1.8em; }
+.panel h2 .icon, .fields .icon, .note .icon { color: var(--accent); }
+
+/* 選手の寸法：アイコン・名前・入力欄をそろえて縦に並べる */
+.fields { display: grid; gap: 10px; margin-bottom: var(--gap); }
+.fields label { display: grid; grid-template-columns: 1.7em 6.5em minmax(6em, 9em) auto auto; justify-content: start; align-items: center; gap: 8px; }
+.fields .icon { width: 1.5em; height: 1.5em; margin: 0; }
+.fields input[type="number"] { width: 100%; }
+.note { display: flex; gap: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
+@media (max-width: 600px) { .btn, .tab { padding: 8px 14px; } } /* スマホでボタンが1つだけ次の行に落ちないように */

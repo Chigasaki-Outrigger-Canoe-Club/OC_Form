@@ -12,13 +12,15 @@
 //   GET /check            ヘッダー X-Upload-Key（任意）       → 合言葉が合っているかの確認
 //   GET  /comments/<選手名>                                 → その選手へのコメントの一覧（古い順）
 //   POST /comments/<選手名> ヘッダー X-Upload-Key、本文 { name, text } → コメントを1件書き込む（日時は Worker が付ける）
+//   PUT    /comments/<選手名>/<ID> ヘッダー X-Upload-Key、本文 { name } や { text } → 名前・本文を直す
+//   DELETE /comments/<選手名>/<ID> ヘッダー X-Upload-Key                → 1件消す
 //   /videos/<保存先> は /files/ と同じ（前の版のサイトのため）
 
 const MAX_BYTES = 90 * 1024 * 1024; // 1本の上限（Workers の無料プランは 100MB まで受け取れる）
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-Upload-Key, X-View-Key",
 };
 const reply = (body, status = 200, headers = {}) => new Response(body, { status, headers: { ...cors, ...headers } });
@@ -51,10 +53,31 @@ const NAME_MAX = 30;
 const TEXT_MAX = 2000;
 const commentPrefix = (athlete) => `comments/${athlete}/`;
 
+// ID＝ファイル名（日時_乱数）。一覧・編集・削除で使う
+const commentKey = (athlete, id) => `${commentPrefix(athlete)}${id}.json`;
+const COMMENT_ID = /^[\w.:-]{1,80}$/;
+
 async function listComments(bucket, athlete) {
   const items = await listAll(bucket, commentPrefix(athlete));
-  const list = await Promise.all(items.map(async (o) => (await bucket.get(o.key))?.json()));
+  const list = await Promise.all(items.map(async (o) => {
+    const c = await (await bucket.get(o.key))?.json();
+    return c && { ...c, id: o.key.slice(commentPrefix(athlete).length).replace(/\.json$/, "") };
+  }));
   return list.filter(Boolean).sort((a, b) => a.at.localeCompare(b.at));
+}
+
+// 名前・本文を直す（日時はそのまま）。なければ null
+async function editComment(bucket, athlete, id, body) {
+  const object = await bucket.get(commentKey(athlete, id));
+  if (!object) return null;
+  const c = await object.json();
+  if (body?.name != null) c.name = String(body.name).trim().slice(0, NAME_MAX) || "名無し";
+  if (body?.text != null) {
+    const text = String(body.text).trim().slice(0, TEXT_MAX);
+    if (text) c.text = text;
+  }
+  await bucket.put(commentKey(athlete, id), JSON.stringify(c), { httpMetadata: { contentType: "application/json" } });
+  return { ...c, id };
 }
 
 async function postComment(bucket, athlete, body) {
@@ -81,13 +104,24 @@ export default {
     }
 
     if (url.pathname.startsWith("/comments/")) {
-      const athlete = decodeURIComponent(url.pathname.slice("/comments/".length));
-      if (!athlete || athlete.includes("/") || athlete.includes("..") || athlete.length > 60) return reply("not found", 404);
-      if (request.method === "GET") return viewOk ? json(await listComments(env.VIDEOS, athlete)) : reply("見る用の合言葉が違います", 401);
-      if (request.method !== "POST") return reply("method not allowed", 405);
+      // /comments/選手名 または /comments/選手名/ID
+      const [athlete, id, extra] = url.pathname.slice("/comments/".length).split("/").map(decodeURIComponent);
+      if (!athlete || athlete.includes("..") || athlete.length > 60 || extra != null || (id != null && !COMMENT_ID.test(id))) return reply("not found", 404);
+      if (request.method === "GET" && id == null) return viewOk ? json(await listComments(env.VIDEOS, athlete)) : reply("見る用の合言葉が違います", 401);
       if (!uploadOk) return reply("合言葉が違います", 401);
-      const saved = await postComment(env.VIDEOS, athlete, await request.json().catch(() => null));
-      return saved ? json(saved) : reply("コメントが空です", 400);
+      if (request.method === "POST" && id == null) {
+        const saved = await postComment(env.VIDEOS, athlete, await request.json().catch(() => null));
+        return saved ? json(saved) : reply("コメントが空です", 400);
+      }
+      if (request.method === "PUT" && id != null) {
+        const saved = await editComment(env.VIDEOS, athlete, id, await request.json().catch(() => null));
+        return saved ? json(saved) : reply("コメントがありません", 404);
+      }
+      if (request.method === "DELETE" && id != null) {
+        await env.VIDEOS.delete(commentKey(athlete, id));
+        return json({ deleted: id });
+      }
+      return reply("method not allowed", 405);
     }
 
     const key = objectKey(url.pathname);

@@ -57,3 +57,25 @@ test("コメント：合言葉があれば書き込め、誰でも古い順に�
   assert.ok(list[0].at < list[1].at);
   assert.equal((await worker.fetch(new Request("https://w.example/comments/a%2F..%2Fb"), env)).status, 404);
 });
+
+test("コメント：ID で名前・本文を直し、消せる（合言葉が必要。日時はそのまま）", async () => {
+  const store = new Map();
+  const env = { UPLOAD_KEY: "up", VIDEOS: {
+    put: async (k, body) => store.set(k, body),
+    get: async (k) => (store.has(k) ? { json: async () => JSON.parse(store.get(k)) } : null),
+    delete: async (k) => store.delete(k),
+    list: async ({ prefix }) => ({ objects: [...store.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key })), truncated: false }) } };
+  const call = (method, path, body, key = "up") => worker.fetch(new Request(`https://w.example/comments/Reo${path}`, {
+    method, headers: { "X-Upload-Key": key, "Content-Type": "application/json" }, body: body && JSON.stringify(body) }), env);
+  await call("POST", "", { name: "コーチ", text: "前傾を深く" });
+  const [c] = await (await call("GET", "")).json();
+  assert.ok(c.id);
+  assert.equal((await call("PUT", `/${encodeURIComponent(c.id)}`, { name: "Manato" })).status, 200);
+  assert.equal((await call("PUT", `/${encodeURIComponent(c.id)}`, { text: "前傾をもっと深く" })).status, 200);
+  const [edited] = await (await call("GET", "")).json();
+  assert.deepEqual([edited.name, edited.text, edited.at], ["Manato", "前傾をもっと深く", c.at]);
+  assert.equal((await call("DELETE", `/${encodeURIComponent(c.id)}`, null, "bad")).status, 401);
+  assert.equal((await call("DELETE", `/${encodeURIComponent(c.id)}`)).status, 200);
+  assert.deepEqual(await (await call("GET", "")).json(), []);
+  assert.equal((await call("PUT", "/..%2Fx", { name: "a" })).status, 404);
+});

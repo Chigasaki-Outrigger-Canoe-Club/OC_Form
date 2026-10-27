@@ -218,7 +218,15 @@ body {
 /* コメント（掲示板ふう）：「番号 名前：日時」の下に本文 */
 .comments { max-height: 40vh; overflow-y: auto; margin-bottom: var(--gap); }
 .comment { margin-bottom: var(--gap); }
-.comment-head { font-size: 0.85rem; color: var(--muted); }
+.comment-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; font-size: 0.85rem; color: var(--muted); }
+/* 右端のメニュー（⋮）：押すと 名前変更・コメント編集・削除 が出る */
+.comment-menu { text-align: right; }
+.comment-menu[open] { flex-basis: 100%; } /* 開いたら名前・日時の下の行に出す（狭い画面でも名前が詰まらないように） */
+.comment-menu summary { list-style: none; cursor: pointer; padding: 0 8px; font-size: 1.1rem; }
+.comment-menu summary::-webkit-details-marker { display: none; }
+/* 一覧はスクロールする枠の中なので、浮かせずにその場で横に並べる（枠で切れないように） */
+.comment-menu-items { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; padding: 4px 0; }
+.comment.busy { opacity: 0.5; pointer-events: none; } /* 直す・消すあいだは操作できない */
 .comment-head b { color: var(--accent); }
 .comment-text { white-space: pre-wrap; padding-left: 1.5em; overflow-wrap: anywhere; }
 .comment-input { display: block; width: 100%; margin: 6px 0; font: inherit; resize: vertical; }

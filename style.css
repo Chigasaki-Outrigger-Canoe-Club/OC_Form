@@ -1,29 +1,36 @@
-/* 色と余白はここでまとめて定義し、各所で使い回す */
+/* 色と余白はここでまとめて定義し、各所で使い回す
+   テーマ：茅ヶ崎の海（烏帽子岩とアウトリガーカヌー）。ヘッダーの絵だけを目立たせ、ほかは静かに */
 :root {
-  --bg: #f4f6f8;
+  --bg: #f1f5f4;        /* 朝の霧のような白 */
   --panel: #ffffff;
-  --text: #1c2430;
-  --muted: #667085;
-  --accent: #0b6e99;
-  --border: #d7dde4;
-  --danger: #e5484d;
+  --text: #19323b;
+  --muted: #5f7880;
+  --accent: #1c7c8c;    /* 海の青緑：ボタン・選択中 */
+  --deep: #0f3d4c;      /* 深い海：見出し・ヘッダー */
+  --sky: #cfe6ea;
+  --sand: #e7dcc6;
+  --border: #d5e0e0;
+  --danger: #c8454b;
   --paddle: #a0703c;
   --skin: #e8b994;
   --blade: #2b3138;
   --drive: #e01e37;
   --gap: 12px;
-  --radius: 8px;
+  --radius: 10px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12161c;
-    --panel: #1b2129;
-    --text: #e6e9ee;
-    --muted: #98a2b3;
-    --accent: #4fb3e0;
-    --border: #2e3742;
-    --danger: #ff6369;
+    --bg: #0b1e25;      /* 夜の海 */
+    --panel: #12303a;
+    --text: #e3eef0;
+    --muted: #93adb3;
+    --accent: #5fc1cf;
+    --deep: #e3eef0;
+    --sky: #1d4a57;
+    --sand: #b9a984;
+    --border: #23464f;
+    --danger: #ff7a7f;
     --paddle: #d9a066;
     --skin: #b98a6a;
     --blade: #aab3bf;
@@ -38,22 +45,33 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  font-family: "Zen Kaku Gothic New", system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  line-height: 1.6;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap);
-  padding: var(--gap) 16px;
-  border-bottom: 1px solid var(--border);
+/* ヘッダー：空と海の絵（烏帽子岩とカヌー）の上に題名 */
+.hero { position: relative; height: 190px; overflow: hidden; background: #1c6f80; color: #fff; } /* 空と海は中の絵（svg）で描く */
+.hero svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hero-text { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; align-items: baseline; gap: 16px; padding: 0 20px; max-width: 1100px; margin: 0 auto; }
+.hero h1 { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: 0.04em; text-shadow: 0 1px 8px rgba(15, 61, 76, 0.45); }
+.hero p { margin: 0; font-size: 0.9rem; opacity: 0.92; text-shadow: 0 1px 6px rgba(15, 61, 76, 0.5); }
+.hero .nav { margin-left: auto; color: #fff; border: 1px solid rgba(255, 255, 255, 0.7); }
+.hero .nav:hover { background: rgba(255, 255, 255, 0.15); }
+@media (max-width: 600px) {
+  .hero { height: 150px; }
+  .hero h1 { font-size: 1.5rem; }
+  .hero p { display: none; }
 }
 
-.header h1 { margin: 0; font-size: 1.2rem; }
+/* 選手比較ページなどの細いヘッダー（画面を広く使うため、絵は出さない） */
+.header { display: flex; align-items: center; gap: var(--gap); padding: 8px 16px; background: var(--deep); color: #fff; }
+@media (prefers-color-scheme: dark) { .header { background: #0f3d4c; } }
+.header h1 { margin: 0; font-size: 1.1rem; }
 .header h1 a { color: inherit; text-decoration: none; }
-/* ヘッダーのページ切り替え（解析 ⇔ 選手比較） */
-.nav { padding: 4px 10px; border-radius: var(--radius); color: var(--accent); text-decoration: none; font-weight: bold; }
-.nav.active { background: var(--accent); color: #fff; }
+/* ページ切り替え（解析 ⇔ 選手比較） */
+.nav { padding: 4px 12px; border-radius: 999px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 0.9rem; }
+.header .nav { color: #fff; }
+.nav.active { background: rgba(255, 255, 255, 0.18); }
 
 .badge {
   font-size: 0.8rem;
@@ -75,10 +93,10 @@ body {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 18px 20px;
 }
 
-.panel h2 { margin: 0 0 var(--gap); font-size: 1rem; }
+.panel h2 { margin: 0 0 var(--gap); font-size: 1.1rem; font-weight: 700; color: var(--deep); }
 
 .row {
   display: flex;
@@ -100,6 +118,7 @@ body {
 }
 
 .btn:hover, .tab:hover { border-color: var(--accent); }
+.btn:focus-visible, .tab:focus-visible, .nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tab.loaded::after { content: " ●"; }

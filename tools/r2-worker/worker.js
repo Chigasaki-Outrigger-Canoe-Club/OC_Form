@@ -10,13 +10,15 @@
 //   GET /files/<保存先>                                     → ファイルを返す
 //   GET /list?prefix=data/                                  → 保存したファイルの一覧（JSON）
 //   GET /check            ヘッダー X-Upload-Key（任意）       → 合言葉が合っているかの確認
+//   GET  /comments/<選手名>                                 → その選手へのコメントの一覧（古い順）
+//   POST /comments/<選手名> ヘッダー X-Upload-Key、本文 { name, text } → コメントを1件書き込む（日時は Worker が付ける）
 //   /videos/<保存先> は /files/ と同じ（前の版のサイトのため）
 
 const MAX_BYTES = 90 * 1024 * 1024; // 1本の上限（Workers の無料プランは 100MB まで受け取れる）
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-Upload-Key, X-View-Key",
 };
 const reply = (body, status = 200, headers = {}) => new Response(body, { status, headers: { ...cors, ...headers } });
@@ -43,6 +45,28 @@ async function listAll(bucket, prefix) {
   return out;
 }
 
+// ---- コメント（掲示板） ----
+// 1件ずつ別のファイルにする（同時に書き込んでも消し合わないように）。保存先：comments/選手名/日時_乱数.json
+const NAME_MAX = 30;
+const TEXT_MAX = 2000;
+const commentPrefix = (athlete) => `comments/${athlete}/`;
+
+async function listComments(bucket, athlete) {
+  const items = await listAll(bucket, commentPrefix(athlete));
+  const list = await Promise.all(items.map(async (o) => (await bucket.get(o.key))?.json()));
+  return list.filter(Boolean).sort((a, b) => a.at.localeCompare(b.at));
+}
+
+async function postComment(bucket, athlete, body) {
+  const name = String(body?.name ?? "").trim().slice(0, NAME_MAX) || "名無し";
+  const text = String(body?.text ?? "").trim().slice(0, TEXT_MAX);
+  if (!text) return null;
+  const at = new Date().toISOString();
+  await bucket.put(`${commentPrefix(athlete)}${at}_${Math.random().toString(36).slice(2, 8)}.json`, JSON.stringify({ name, text, at }),
+    { httpMetadata: { contentType: "application/json" } });
+  return { name, text, at };
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return reply(null, 204);
@@ -54,6 +78,16 @@ export default {
     if (url.pathname === "/list") {
       if (!viewOk) return reply("見る用の合言葉が違います", 401);
       return json(await listAll(env.VIDEOS, url.searchParams.get("prefix") || "data/"));
+    }
+
+    if (url.pathname.startsWith("/comments/")) {
+      const athlete = decodeURIComponent(url.pathname.slice("/comments/".length));
+      if (!athlete || athlete.includes("/") || athlete.includes("..") || athlete.length > 60) return reply("not found", 404);
+      if (request.method === "GET") return viewOk ? json(await listComments(env.VIDEOS, athlete)) : reply("見る用の合言葉が違います", 401);
+      if (request.method !== "POST") return reply("method not allowed", 405);
+      if (!uploadOk) return reply("合言葉が違います", 401);
+      const saved = await postComment(env.VIDEOS, athlete, await request.json().catch(() => null));
+      return saved ? json(saved) : reply("コメントが空です", 400);
     }
 
     const key = objectKey(url.pathname);

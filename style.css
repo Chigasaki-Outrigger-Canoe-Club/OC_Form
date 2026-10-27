@@ -214,3 +214,11 @@ body {
 }
 
 
+
+/* コメント（掲示板ふう）：「番号 名前：日時」の下に本文 */
+.comments { max-height: 40vh; overflow-y: auto; margin-bottom: var(--gap); }
+.comment { margin-bottom: var(--gap); }
+.comment-head { font-size: 0.85rem; color: var(--muted); }
+.comment-head b { color: var(--accent); }
+.comment-text { white-space: pre-wrap; padding-left: 1.5em; overflow-wrap: anywhere; }
+.comment-input { display: block; width: 100%; margin: 6px 0; font: inherit; resize: vertical; }

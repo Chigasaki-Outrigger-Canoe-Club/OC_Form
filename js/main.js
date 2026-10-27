@@ -22,6 +22,7 @@ import { spinePoints } from "./spine.js";
 import { detectDrive, refineToCatch } from "./drive.js";
 import { buildFeedback, feedbackRows } from "./feedback.js";
 import { form2d } from "./form2d.js";
+import { setupComments } from "./comments.js";
 import * as athletes from "./athletes.js";
 import * as sessions from "./sessions.js";
 import * as github from "./github.js";
@@ -168,7 +169,10 @@ function uploadAthletesSoon() {
   athleteTimer = setTimeout(() => r2.uploadAthletes(ghSettings, athletes.buildBackup(store)).catch(() => {}), 2000);
 }
 
+let comments = null; // コメント欄（下の setupComments で作る。選手を変えたら読み直す）
+
 function renderAthletes() {
+  comments?.render();
   const select = el("athleteSelect");
   select.innerHTML = "";
   if (!store.list.length) select.add(new Option("（選手を追加してください）", ""));
@@ -1056,6 +1060,7 @@ function updateDisplay() {
 }
 
 sessions.requestPersist(); // ブラウザに「この保存を消さないで」と頼む（対応しているブラウザのみ）
+comments = setupComments({ getSettings: () => ghSettings, getAthlete: () => athletes.currentAthlete(store)?.name ?? "", askKey });
 renderAthletes();
 loadGitHubAthletes();
 showGitHubList();

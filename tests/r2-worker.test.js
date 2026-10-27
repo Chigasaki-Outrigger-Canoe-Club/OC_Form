@@ -38,3 +38,22 @@ test("保存は保存用の合言葉が必要、再生は再生用の合言葉�
   await worker.fetch(req("PUT", "/videos/b.mp4", { "X-Upload-Key": "up" }, "b"), open);
   assert.equal((await worker.fetch(req("GET", "/videos/b.mp4"), open)).status, 200);
 });
+
+test("コメント：合言葉があれば書き込め、誰でも古い順に読める。日時は Worker が付け、空のコメントは受け付けない", async () => {
+  const store = new Map();
+  const env = { UPLOAD_KEY: "up", VIDEOS: {
+    put: async (k, body) => store.set(k, typeof body === "string" ? body : await new Response(body).text()),
+    get: async (k) => (store.has(k) ? { json: async () => JSON.parse(store.get(k)) } : null),
+    list: async ({ prefix }) => ({ objects: [...store.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key })), truncated: false }) } };
+  const post = (body, key = "up") => worker.fetch(new Request("https://w.example/comments/%E3%82%8C%E3%81%8A", {
+    method: "POST", headers: { "X-Upload-Key": key, "Content-Type": "application/json" }, body: JSON.stringify(body) }), env);
+  assert.equal((await post({ name: "コーチ", text: "キャッチで前傾を深く" })).status, 200);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal((await post({ name: "", text: "肘が伸びてきた" })).status, 200);
+  assert.equal((await post({ name: "x", text: "  " })).status, 400);
+  assert.equal((await post({ name: "x", text: "y" }, "bad")).status, 401);
+  const list = await (await worker.fetch(new Request("https://w.example/comments/%E3%82%8C%E3%81%8A"), env)).json();
+  assert.deepEqual(list.map((c) => [c.name, c.text]), [["コーチ", "キャッチで前傾を深く"], ["名無し", "肘が伸びてきた"]]);
+  assert.ok(list[0].at < list[1].at);
+  assert.equal((await worker.fetch(new Request("https://w.example/comments/a%2F..%2Fb"), env)).status, 404);
+});

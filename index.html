@@ -13,6 +13,15 @@
   </header>
 
   <main class="layout">
+    <!-- コメント（掲示板）：選んでいる選手のフォームへのコメント。名前・本文・日時で残る -->
+    <section class="panel">
+      <h2 id="commentTitle">コメント</h2>
+      <div id="commentList" class="comments"></div>
+      <input type="text" id="commentName" class="btn" placeholder="名前" maxlength="30">
+      <textarea id="commentText" class="btn comment-input" rows="3" placeholder="コメント" maxlength="2000"></textarea>
+      <button class="btn primary" id="commentPost">書き込む</button>
+    </section>
+
     <!-- 1. 選手情報（動画を読み込む前に選ぶ） -->
     <section class="panel">
       <div class="row">
